@@ -1,0 +1,515 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <title>Планер</title>
+  <meta name="theme-color" content="#fbf5ea">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Планер">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bad+Script&family=Caveat:wght@500;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Акварельные иллюстрации (нарисованы в SVG) -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <filter id="wc" x="-15%" y="-15%" width="130%" height="130%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.05" numOctaves="2" seed="7" result="n"/>
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="2.6" xChannelSelector="R" yChannelSelector="G"/>
+      </filter>
+
+      <!-- служебные значки -->
+      <symbol id="heart" viewBox="0 0 24 24">
+        <path d="M12 20.5s-7.3-4.5-9.3-9C1.2 8.1 3.2 4.6 6.6 4.6c2.1 0 3.5 1.1 4.4 2.6.9-1.5 2.3-2.6 4.4-2.6 3.4 0 5.4 3.5 3.9 6.9-2 4.5-9.3 9-9.3 9z"/>
+      </symbol>
+      <symbol id="pin" viewBox="0 0 24 24">
+        <path d="M8.5 3.5h7l-1.2 5.2 3.2 3.3v1.8h-11V12l3.2-3.3z"/>
+        <path d="M12 13.8v7" fill="none"/>
+      </symbol>
+
+      <!-- мелкие элементы -->
+      <symbol id="floret" viewBox="-5 -5 10 10">
+        <g fill="currentColor"><ellipse cx="0" cy="-2.3" rx="2" ry="2.3"/><ellipse cx="2.3" cy="0" rx="2.3" ry="2"/><ellipse cx="0" cy="2.3" rx="2" ry="2.3"/><ellipse cx="-2.3" cy="0" rx="2.3" ry="2"/></g>
+        <circle r=".9" fill="#fff" opacity=".75"/>
+      </symbol>
+      <symbol id="blossom5" viewBox="-6 -6 12 12">
+        <g fill="currentColor">
+          <ellipse cx="0" cy="-3" rx="2.3" ry="3"/>
+          <ellipse cx="0" cy="-3" rx="2.3" ry="3" transform="rotate(72)"/>
+          <ellipse cx="0" cy="-3" rx="2.3" ry="3" transform="rotate(144)"/>
+          <ellipse cx="0" cy="-3" rx="2.3" ry="3" transform="rotate(216)"/>
+          <ellipse cx="0" cy="-3" rx="2.3" ry="3" transform="rotate(288)"/>
+        </g>
+        <circle r="1.3" fill="#d9687f"/>
+        <g fill="#f2c14e"><circle cx="0" cy="-1.9" r=".45"/><circle cx="1.7" cy=".7" r=".45"/><circle cx="-1.7" cy=".7" r=".45"/></g>
+      </symbol>
+      <symbol id="daisy" viewBox="-10 -10 20 20">
+        <g fill="#fffaf0" stroke="#e3d6c4" stroke-width=".5">
+          <ellipse cx="0" cy="-5.5" rx="2" ry="4"/><ellipse cx="0" cy="-5.5" rx="2" ry="4" transform="rotate(40)"/>
+          <ellipse cx="0" cy="-5.5" rx="2" ry="4" transform="rotate(80)"/><ellipse cx="0" cy="-5.5" rx="2" ry="4" transform="rotate(120)"/>
+          <ellipse cx="0" cy="-5.5" rx="2" ry="4" transform="rotate(160)"/><ellipse cx="0" cy="-5.5" rx="2" ry="4" transform="rotate(200)"/>
+          <ellipse cx="0" cy="-5.5" rx="2" ry="4" transform="rotate(240)"/><ellipse cx="0" cy="-5.5" rx="2" ry="4" transform="rotate(280)"/>
+          <ellipse cx="0" cy="-5.5" rx="2" ry="4" transform="rotate(320)"/>
+        </g>
+        <circle r="3" fill="#eab64c"/><circle r="3" fill="none" stroke="#d39a32" stroke-width=".6"/>
+      </symbol>
+
+      <!-- сезонные акценты -->
+      <symbol id="d-autumn" viewBox="0 0 40 40">
+        <path filter="url(#wc)" d="M20 2 l4 9 7-3-2 8 9 1-7 6 3 7-9-3-1 11h-4l-1-11-9 3 3-7-7-6 9-1-2-8 7 3z" fill="#d07a3e" opacity=".85"/>
+      </symbol>
+      <symbol id="d-winter" viewBox="0 0 40 40">
+        <g stroke="#8fb0d6" stroke-width="2.2" stroke-linecap="round" fill="none" opacity=".9">
+          <path d="M20 3v34M5.3 11.5l29.4 17M5.3 28.5l29.4-17"/>
+          <path d="M15 6l5 4 5-4M15 34l5-4 5 4M5 17l6 1 1-6M35 23l-6-1-1 6M5 23l6-1 1 6M35 17l-6 1-1-6"/>
+        </g>
+      </symbol>
+      <symbol id="d-spring" viewBox="-20 -20 40 40">
+        <use href="#blossom5" x="-18" y="-18" width="36" height="36" style="color:#f4b8c4"/>
+      </symbol>
+      <symbol id="d-summer" viewBox="-10 -10 20 20">
+        <use href="#daisy" x="-10" y="-10" width="20" height="20"/>
+      </symbol>
+
+      <symbol id="sprig" viewBox="0 0 120 120">
+        <g filter="url(#wc)">
+          <path d="M8 112 C 30 80, 55 55, 112 10" fill="none" stroke="#7f9468" stroke-width="2.2" stroke-linecap="round" opacity=".8"/>
+          <g opacity=".8">
+            <ellipse cx="30" cy="84" rx="13" ry="6" transform="rotate(-70 30 84)" fill="#8fa57a"/>
+            <ellipse cx="22" cy="74" rx="12" ry="5.5" transform="rotate(-20 22 74)" fill="#a7b98f"/>
+            <ellipse cx="50" cy="62" rx="14" ry="6" transform="rotate(-75 50 62)" fill="#7f9468"/>
+            <ellipse cx="42" cy="50" rx="13" ry="5.5" transform="rotate(-15 42 50)" fill="#9fb488"/>
+            <ellipse cx="72" cy="42" rx="13" ry="6" transform="rotate(-80 72 42)" fill="var(--sprig-accent, #c98a52)"/>
+            <ellipse cx="66" cy="30" rx="12" ry="5" transform="rotate(-10 66 30)" fill="#8fa57a"/>
+            <ellipse cx="92" cy="26" rx="11" ry="5" transform="rotate(-70 92 26)" fill="var(--sprig-accent2, #d9a06a)"/>
+            <ellipse cx="96" cy="14" rx="9" ry="4.5" transform="rotate(-25 96 14)" fill="#a7b98f"/>
+          </g>
+        </g>
+      </symbol>
+
+      <!-- ===== ЦВЕТЫ ===== -->
+      <!-- тюльпаны в крафт-бумаге -->
+      <symbol id="i-tulips" viewBox="0 0 64 64">
+        <g filter="url(#wc)">
+          <path d="M31 40 C29 30 25 24 23 18 M32 40 C33 30 35 22 37 14 M32 40 C32 34 31 28 31 24 M33 40 C36 32 40 28 43 24" stroke="#6f8a58" stroke-width="1.6" fill="none"/>
+          <path d="M30 38 C22 32 17 22 16 14 C22 20 27 28 30 38Z" fill="#8fa57a"/>
+          <path d="M34 38 C42 32 47 24 50 18 C44 22 38 30 34 38Z" fill="#a7b98f"/>
+          <g>
+            <ellipse cx="23" cy="15" rx="4.2" ry="6.5" fill="#e07d92"/>
+            <ellipse cx="20.6" cy="16" rx="3" ry="5.8" transform="rotate(-14 20.6 16)" fill="#f2a6b4"/>
+            <ellipse cx="25.4" cy="16" rx="3" ry="5.8" transform="rotate(14 25.4 16)" fill="#ec95a6"/>
+          </g>
+          <g>
+            <ellipse cx="37" cy="11" rx="4.2" ry="6.5" fill="#ea8a5e"/>
+            <ellipse cx="34.6" cy="12" rx="3" ry="5.8" transform="rotate(-14 34.6 12)" fill="#f6b48f"/>
+            <ellipse cx="39.4" cy="12" rx="3" ry="5.8" transform="rotate(14 39.4 12)" fill="#f2a27a"/>
+          </g>
+          <g>
+            <ellipse cx="31" cy="21" rx="4" ry="6" fill="#e9b84a"/>
+            <ellipse cx="28.8" cy="22" rx="2.9" ry="5.4" transform="rotate(-14 28.8 22)" fill="#f6d77e"/>
+            <ellipse cx="33.2" cy="22" rx="2.9" ry="5.4" transform="rotate(14 33.2 22)" fill="#f0c860"/>
+          </g>
+          <g>
+            <ellipse cx="44" cy="21" rx="3.8" ry="5.8" fill="#d76f8a"/>
+            <ellipse cx="41.9" cy="22" rx="2.8" ry="5.2" transform="rotate(-14 41.9 22)" fill="#eb9cb0"/>
+            <ellipse cx="46.1" cy="22" rx="2.8" ry="5.2" transform="rotate(14 46.1 22)" fill="#e586a0"/>
+          </g>
+          <path d="M15 33 L49 33 L37 62 L27 62 Z" fill="#d6b08a"/>
+          <path d="M13 32 Q22 27 32 33 Q42 27 51 32 L46 38 Q32 33 18 38Z" fill="#e4c6a0"/>
+          <path d="M22 38 L30 61 M40 37 L35 61" stroke="#c39a72" stroke-width=".8" opacity=".7"/>
+          <path d="M24 46 q8 3 16 0" stroke="#9a7b5a" stroke-width="1.6" fill="none"/>
+          <path d="M32 47 q-5 4-3 7 M32 47 q5 4 3 7" stroke="#9a7b5a" stroke-width="1.2" fill="none"/>
+        </g>
+      </symbol>
+
+      <!-- гортензия -->
+      <symbol id="i-hydrangea" viewBox="0 0 64 64">
+        <g filter="url(#wc)">
+          <path d="M30 60 C 22 58 10 54 6 44 C 16 44 26 50 30 60Z" fill="#7f9468"/>
+          <path d="M34 60 C 42 58 54 54 58 44 C 48 44 38 50 34 60Z" fill="#8fa57a"/>
+          <path d="M8 45 C 18 48 25 53 30 59 M56 45 C 46 48 39 53 34 59" stroke="#62794f" stroke-width=".8" fill="none"/>
+          <path d="M32 58 V44" stroke="#6f8a58" stroke-width="2"/>
+          <circle cx="32" cy="27" r="19" fill="#cfc4ea" opacity=".45"/>
+          <circle cx="26" cy="33" r="12" fill="#b6c8ec" opacity=".45"/>
+          <use href="#floret" x="15" y="20" width="11" height="11" style="color:#9db4e0"/>
+          <use href="#floret" x="24" y="11" width="11" height="11" style="color:#b9a9dc"/>
+          <use href="#floret" x="34" y="12" width="11" height="11" style="color:#9db4e0"/>
+          <use href="#floret" x="42" y="20" width="10" height="10" style="color:#d6b0d8"/>
+          <use href="#floret" x="20" y="29" width="11" height="11" style="color:#d6b0d8"/>
+          <use href="#floret" x="29" y="21" width="11" height="11" style="color:#a9bde6"/>
+          <use href="#floret" x="38" y="28" width="11" height="11" style="color:#b9a9dc"/>
+          <use href="#floret" x="13" y="31" width="10" height="10" style="color:#b9a9dc"/>
+          <use href="#floret" x="27" y="32" width="11" height="11" style="color:#9db4e0"/>
+          <use href="#floret" x="35" y="37" width="10" height="10" style="color:#d6b0d8"/>
+          <use href="#floret" x="20" y="38" width="10" height="10" style="color:#a9bde6"/>
+          <use href="#floret" x="44" y="31" width="9" height="9" style="color:#9db4e0"/>
+          <use href="#floret" x="31" y="5" width="9" height="9" style="color:#d6b0d8"/>
+        </g>
+      </symbol>
+
+      <!-- ромашки в эмалированном кувшине -->
+      <symbol id="i-daisies" viewBox="0 0 64 64">
+        <g filter="url(#wc)">
+          <path d="M32 40 C30 30 24 24 16 18 M32 40 C33 30 38 22 46 14 M32 40 V10 M32 40 C28 32 22 30 12 30 M32 40 C36 34 44 32 52 30" stroke="#6f8a58" stroke-width="1.4" fill="none"/>
+          <path d="M31 40 C24 35 22 30 22 26 C28 29 30 34 31 40Z" fill="#8fa57a"/>
+          <g fill="#fffaf2" opacity=".95">
+            <circle cx="24" cy="24" r="1.4"/><circle cx="40" cy="22" r="1.4"/><circle cx="20" cy="27" r="1.2"/><circle cx="44" cy="27" r="1.2"/>
+            <circle cx="27" cy="18" r="1.1"/><circle cx="37" cy="17" r="1.1"/><circle cx="48" cy="24" r="1"/>
+          </g>
+          <path d="M22 40 q-6 9-2 17 q2 4 12 4 q10 0 12-4 q4-8-2-17z" fill="#f3ece0"/>
+          <path d="M22 40 h20" stroke="#6f8fbf" stroke-width="3" stroke-linecap="round"/>
+          <path d="M42 43 q8 0 7 7 q-1 5-6 5" stroke="#f3ece0" stroke-width="3.2" fill="none"/>
+          <path d="M42 43 q8 0 7 7 q-1 5-6 5" stroke="#6f8fbf" stroke-width=".8" fill="none"/>
+          <g fill="#6f8fbf" opacity=".8">
+            <ellipse cx="27" cy="50" rx="2.6" ry="1.2" transform="rotate(-30 27 50)"/><ellipse cx="32" cy="52" rx="2.6" ry="1.2"/><ellipse cx="37" cy="50" rx="2.6" ry="1.2" transform="rotate(30 37 50)"/>
+          </g>
+        </g>
+        <use href="#daisy" x="8" y="10" width="16" height="16"/>
+        <use href="#daisy" x="39" y="6" width="15" height="15"/>
+        <use href="#daisy" x="24" y="1" width="16" height="16"/>
+        <use href="#daisy" x="4" y="23" width="13" height="13"/>
+        <use href="#daisy" x="46" y="23" width="13" height="13"/>
+      </symbol>
+
+      <!-- ===== ВЕСНА ===== -->
+      <symbol id="i-blossom" viewBox="0 0 64 64">
+        <g filter="url(#wc)">
+          <path d="M4 60 C 18 46 30 38 60 8 M26 40 C 26 30 30 22 36 16 M40 26 C 46 26 52 28 58 32" stroke="#8a6248" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+          <g fill="#a7b98f"><ellipse cx="18" cy="46" rx="5" ry="2.4" transform="rotate(-40 18 46)"/><ellipse cx="50" cy="20" rx="5" ry="2.4" transform="rotate(30 50 20)"/></g>
+          <use href="#blossom5" x="9" y="40" width="14" height="14" style="color:#f6c4cf"/>
+          <use href="#blossom5" x="22" y="30" width="15" height="15" style="color:#f2b0c0"/>
+          <use href="#blossom5" x="27" y="13" width="14" height="14" style="color:#f8d2da"/>
+          <use href="#blossom5" x="36" y="22" width="15" height="15" style="color:#f4bccb"/>
+          <use href="#blossom5" x="47" y="4" width="13" height="13" style="color:#f2b0c0"/>
+          <use href="#blossom5" x="50" y="25" width="12" height="12" style="color:#f8d2da"/>
+          <g fill="#e98fa5"><circle cx="58" cy="9" r="1.8"/><circle cx="36" cy="16" r="1.6"/><circle cx="6" cy="58" r="1.6"/></g>
+        </g>
+      </symbol>
+
+      <symbol id="i-lily" viewBox="0 0 64 64">
+        <g filter="url(#wc)">
+          <path d="M24 62 C 12 50 12 30 22 14 C 30 30 30 48 24 62Z" fill="#7f9468"/>
+          <path d="M36 62 C 50 52 54 34 48 18 C 38 32 34 48 36 62Z" fill="#9fb488"/>
+          <path d="M22 18 C 24 34 26 48 24 60 M47 22 C 42 36 38 50 36 60" stroke="#62794f" stroke-width=".8" fill="none"/>
+          <path d="M30 62 C 30 40 34 20 46 10" stroke="#6f8a58" stroke-width="1.6" fill="none"/>
+          <g stroke="#6f8a58" stroke-width="1" fill="none"><path d="M31 46 q-4 1-5 4"/><path d="M32 38 q-4 1-5 4"/><path d="M34 30 q-4 0-6 3"/><path d="M37 23 q-4 0-6 3"/><path d="M41 16 q-4 0-6 3"/><path d="M33 34 q4 1 5 4"/><path d="M38 21 q4 1 5 4"/></g>
+          <g fill="#fffdf6" stroke="#d9d2c2" stroke-width=".6">
+            <path d="M23 50 q3-4 6 0 l-1 2 h-4z"/><path d="M24 42 q3-4 6 0 l-1 2 h-4z"/><path d="M25 34 q3-4 6 0 l-1 2 h-4z"/>
+            <path d="M28 27 q3-4 6 0 l-1 2 h-4z"/><path d="M32 20 q3-4 6 0 l-1 2 h-4z"/><path d="M36 38 q3-4 6 0 l-1 2 h-4z"/><path d="M41 25 q3-4 6 0 l-1 2 h-4z"/>
+          </g>
+        </g>
+      </symbol>
+
+      <symbol id="i-wateringcan" viewBox="0 0 64 64">
+        <g filter="url(#wc)">
+          <path d="M40 40 L56 22" stroke="#8fa9bd" stroke-width="4" stroke-linecap="round"/>
+          <ellipse cx="57" cy="20" rx="3.5" ry="2" transform="rotate(-45 57 20)" fill="#7f9bb2"/>
+          <g fill="#93b8d6"><circle cx="60" cy="27" r="1"/><circle cx="58" cy="31" r="1"/><circle cx="61" cy="34" r="1"/></g>
+          <path d="M18 24 q11-12 22 0" stroke="#7f9bb2" stroke-width="3" fill="none"/>
+          <path d="M14 28 h28 l-2 26 q0 4-4 4 h-16 q-4 0-4-4z" fill="#a9c1d3"/>
+          <rect x="13" y="26" width="30" height="4" rx="2" fill="#8fa9bd"/>
+          <path d="M18 38 h20" stroke="#fff" stroke-width="1.2" opacity=".5"/>
+          <use href="#floret" x="20" y="40" width="9" height="9" style="color:#f2b0c0"/>
+          <use href="#floret" x="28" y="44" width="8" height="8" style="color:#fff4d6"/>
+          <path d="M4 60 q4-8 2-14 M8 60 q2-6 6-10" stroke="#7f9468" stroke-width="1.4" fill="none"/>
+        </g>
+        <use href="#daisy" x="1" y="40" width="11" height="11"/>
+      </symbol>
+
+      <!-- ===== ЛЕТО ===== -->
+      <symbol id="i-sunflower" viewBox="0 0 64 64">
+        <g filter="url(#wc)">
+          <path d="M32 34 C31 46 33 54 32 63" stroke="#6f8a58" stroke-width="2.4" fill="none"/>
+          <path d="M32 50 C 24 44 16 46 12 50 C 18 54 26 54 32 50Z" fill="#8fa57a"/>
+          <path d="M32 46 C 40 40 48 41 52 44 C 46 49 38 50 32 46Z" fill="#7f9468"/>
+          <g>
+            <ellipse cx="32" cy="11" rx="3.4" ry="7" fill="#f2c14e"/>
+            <ellipse cx="32" cy="11" rx="3.4" ry="7" fill="#e8a93a" transform="rotate(30 32 22)"/>
+            <ellipse cx="32" cy="11" rx="3.4" ry="7" fill="#f2c14e" transform="rotate(60 32 22)"/>
+            <ellipse cx="32" cy="11" rx="3.4" ry="7" fill="#e8a93a" transform="rotate(90 32 22)"/>
+            <ellipse cx="32" cy="11" rx="3.4" ry="7" fill="#f2c14e" transform="rotate(120 32 22)"/>
+            <ellipse cx="32" cy="11" rx="3.4" ry="7" fill="#e8a93a" transform="rotate(150 32 22)"/>
+            <ellipse cx="32" cy="11" rx="3.4" ry="7" fill="#f2c14e" transform="rotate(180 32 22)"/>
+            <ellipse cx="32" cy="11" rx="3.4" ry="7" fill="#e8a93a" transform="rotate(210 32 22)"/>
+            <ellipse cx="32" cy="11" rx="3.4" ry="7" fill="#f2c14e" transform="rotate(240 32 22)"/>
+            <ellipse cx="32" cy="11" rx="3.4" ry="7" fill="#e8a93a" transform="rotate(270 32 22)"/>
+            <ellipse cx="32" cy="11" rx="3.4" ry="7" fill="#f2c14e" transform="rotate(300 32 22)"/>
+            <ellipse cx="32" cy="11" rx="3.4" ry="7" fill="#e8a93a" transform="rotate(330 32 22)"/>
+          </g>
+          <circle cx="32" cy="22" r="7.5" fill="#7a5233"/>
+          <g fill="#a87a4c"><circle cx="30" cy="20" r=".9"/><circle cx="34" cy="21" r=".9"/><circle cx="31" cy="24" r=".9"/><circle cx="35" cy="24.5" r=".8"/><circle cx="28" cy="23" r=".8"/><circle cx="33" cy="18" r=".8"/></g>
+        </g>
+      </symbol>
+
+      <symbol id="i-lemonade" viewBox="0 0 64 64">
+        <g filter="url(#wc)">
+          <path d="M34 24 L44 2" stroke="#e98a9a" stroke-width="3" stroke-linecap="round"/>
+          <path d="M35.5 20.5 L37 17.5 M38.5 14 L40 11 M41.5 7.5 L42.8 4.6" stroke="#fff" stroke-width="2.2"/>
+          <path d="M18 18 h28 v38 q0 5-5 5 h-18 q-5 0-5-5z" fill="#f6e08a" opacity=".85"/>
+          <path d="M18 18 h28 v6 h-28z" fill="#fbefc0"/>
+          <rect x="22" y="30" width="8" height="8" rx="2" fill="#fff" opacity=".6" transform="rotate(12 26 34)"/>
+          <rect x="33" y="40" width="7" height="7" rx="2" fill="#fff" opacity=".55" transform="rotate(-10 36 43)"/>
+          <ellipse cx="24" cy="15" rx="6" ry="2.6" transform="rotate(-30 24 15)" fill="#7f9468"/>
+          <ellipse cx="19" cy="17" rx="5" ry="2.3" transform="rotate(20 19 17)" fill="#9fb488"/>
+          <circle cx="47" cy="19" r="8" fill="#f2d24e"/>
+          <circle cx="47" cy="19" r="6.4" fill="#fbe9a0"/>
+          <path d="M47 13 v12 M41 19 h12 M43 15 l8 8 M51 15 l-8 8" stroke="#f2d24e" stroke-width=".9"/>
+        </g>
+      </symbol>
+
+      <symbol id="i-watermelon" viewBox="0 0 64 64">
+        <g filter="url(#wc)" transform="rotate(-12 32 36)">
+          <path d="M6 30 A26 26 0 0 0 58 30 Z" fill="#6f9a5a"/>
+          <path d="M9 30 A23 23 0 0 0 55 30 Z" fill="#eaf0d6"/>
+          <path d="M11 30 A21 21 0 0 0 53 30 Z" fill="#ec7272"/>
+          <path d="M14 30 A18 18 0 0 0 50 30" fill="none" stroke="#f39a9a" stroke-width="2" opacity=".6"/>
+          <g fill="#3d2f22"><ellipse cx="22" cy="37" rx="1.1" ry="1.8"/><ellipse cx="32" cy="41" rx="1.1" ry="1.8"/><ellipse cx="42" cy="37" rx="1.1" ry="1.8"/><ellipse cx="27" cy="34" rx="1" ry="1.6"/><ellipse cx="37" cy="34" rx="1" ry="1.6"/></g>
+        </g>
+        <use href="#daisy" x="44" y="44" width="16" height="16"/>
+      </symbol>
+
+      <symbol id="i-shell" viewBox="0 0 64 64">
+        <g filter="url(#wc)">
+          <path d="M26 56 h12 l2 5 h-16z" fill="#efc5a6"/>
+          <path d="M32 56 L12 32 Q12 12 32 10 Q52 12 52 32 Z" fill="#f4c7a8"/>
+          <path d="M32 56 L16 22 M32 56 L23 14 M32 56 V11 M32 56 L41 14 M32 56 L48 22 M32 56 L13 30 M32 56 L51 30" stroke="#e3a583" stroke-width="1.2" fill="none"/>
+          <path d="M14 30 Q32 22 50 30" stroke="#fff" stroke-width="1" opacity=".5" fill="none"/>
+          <path d="M51 46 l2 5 5 .5 -4 3 1.5 5 -4.5-3 -4.5 3 1.5-5 -4-3 5-.5z" fill="#e8a36a"/>
+          <g fill="#93b8d6" opacity=".7"><circle cx="8" cy="56" r="2"/><circle cx="13" cy="59" r="1.4"/></g>
+        </g>
+      </symbol>
+
+      <!-- ===== ОСЕНЬ ===== -->
+      <symbol id="i-pumpkin" viewBox="0 0 64 64">
+        <g filter="url(#wc)">
+          <path d="M32 26 q-1-8 3-12" stroke="#7a5a3c" stroke-width="3.4" stroke-linecap="round" fill="none"/>
+          <path d="M35 16 C 42 10 50 14 50 20 C 44 22 38 20 35 16Z" fill="#7f9468"/>
+          <path d="M33 20 q-8-6-12 0 q-2 4 3 4" stroke="#6f8a58" stroke-width="1" fill="none"/>
+          <ellipse cx="20" cy="42" rx="12" ry="15" fill="#d9772c"/>
+          <ellipse cx="44" cy="42" rx="12" ry="15" fill="#d9772c"/>
+          <ellipse cx="26" cy="42" rx="10" ry="16" fill="#e8893a"/>
+          <ellipse cx="38" cy="42" rx="10" ry="16" fill="#e8893a"/>
+          <ellipse cx="32" cy="42" rx="8" ry="16.5" fill="#f19c4c"/>
+          <path d="M30 32 q-1 10 0 20" stroke="#fff" stroke-width="1.4" opacity=".35" fill="none"/>
+        </g>
+      </symbol>
+
+      <symbol id="i-apples" viewBox="0 0 64 64">
+        <g filter="url(#wc)">
+          <path d="M22 26 c-6-4-16-2-16 10 c0 10 7 17 12 17 c2 0 3-1 4-1 s2 1 4 1 c5 0 12-7 12-17 c0-12-10-14-16-10z" fill="#d9534f"/>
+          <path d="M42 34 c-5-3-13-2-13 8 c0 8 6 14 10 14 c1.6 0 2.4-.8 3-.8 s1.4.8 3 .8 c4 0 10-6 10-14 c0-10-8-11-13-8z" fill="#a9c26a"/>
+          <path d="M22 26 q0-6 3-9 M42 34 q0-5 2-7" stroke="#7a5a3c" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+          <path d="M24 20 C 28 14 34 16 34 18 C 30 21 26 21 24 20Z" fill="#7f9468"/>
+          <ellipse cx="14" cy="33" rx="2.2" ry="4" transform="rotate(20 14 33)" fill="#fff" opacity=".4"/>
+          <ellipse cx="36" cy="40" rx="1.8" ry="3.4" transform="rotate(20 36 40)" fill="#fff" opacity=".4"/>
+          <ellipse cx="32" cy="58" rx="24" ry="3" fill="#c9b49a" opacity=".45"/>
+        </g>
+      </symbol>
+
+      <symbol id="i-mushrooms" viewBox="0 0 64 64">
+        <g filter="url(#wc)">
+          <ellipse cx="32" cy="58" rx="27" ry="5" fill="#9fb488"/>
+          <path d="M25 40 h12 l-1 18 h-10z" fill="#f3e8d6"/>
+          <path d="M12 41 Q14 20 31 20 Q48 20 50 41 Q31 46 12 41Z" fill="#c9553e"/>
+          <g fill="#fbf1e2"><circle cx="22" cy="31" r="2.4"/><circle cx="31" cy="26" r="2"/><circle cx="40" cy="31" r="2.6"/><circle cx="29" cy="36" r="1.6"/><circle cx="44" cy="37" r="1.4"/><circle cx="17" cy="38" r="1.4"/></g>
+          <path d="M47 50 h6 l-.5 8 h-5z" fill="#f3e8d6"/>
+          <path d="M43 51 Q44 42 50 42 Q56 42 57 51 Q50 53 43 51Z" fill="#b98352"/>
+          <path d="M6 58 l2-6 2 6 M56 58 l2-5 2 5" stroke="#7f9468" stroke-width="1.2" fill="none"/>
+        </g>
+      </symbol>
+
+      <symbol id="i-autumnvase" viewBox="0 0 64 64">
+        <g filter="url(#wc)">
+          <path d="M30 40 C 26 30 20 22 14 14 M32 40 V6 M34 40 C 38 30 44 22 50 14 M31 40 C 28 34 22 32 16 32" stroke="#b8a07c" stroke-width="1.2" fill="none"/>
+          <g fill="#ead7b4" opacity=".95">
+            <ellipse cx="15" cy="15" rx="4" ry="11" transform="rotate(-35 15 15)"/>
+            <ellipse cx="32" cy="9" rx="4.2" ry="11"/>
+            <ellipse cx="49" cy="15" rx="4" ry="11" transform="rotate(35 49 15)"/>
+          </g>
+          <g stroke="#d8c09a" stroke-width=".7" fill="none"><path d="M32 2 v16 M30 6 l2 3 2-3 M30 11 l2 3 2-3"/><path d="M13 8 l5 14 M11 12 l3 1 0-3"/><path d="M51 8 l-5 14 M53 12 l-3 1 0-3"/></g>
+          <ellipse cx="17" cy="31" rx="4.5" ry="2.2" transform="rotate(-20 17 31)" fill="#d07a3e"/>
+          <ellipse cx="46" cy="29" rx="4.5" ry="2.2" transform="rotate(25 46 29)" fill="#c98a52"/>
+          <use href="#floret" x="40" y="32" width="8" height="8" style="color:#f2d6b0"/>
+          <path d="M24 40 q-7 9-3 16 q2 5 11 5 q9 0 11-5 q4-7-3-16z" fill="#e9e0cf"/>
+          <rect x="24" y="37" width="16" height="4" rx="2" fill="#dccfb8"/>
+          <path d="M40 43 q7 1 6 7 q-1 4-5 4" stroke="#e9e0cf" stroke-width="3" fill="none"/>
+          <g fill="#a08868" opacity=".5"><circle cx="27" cy="47" r=".6"/><circle cx="31" cy="52" r=".6"/><circle cx="36" cy="46" r=".6"/><circle cx="38" cy="54" r=".6"/><circle cx="29" cy="57" r=".6"/></g>
+        </g>
+      </symbol>
+
+      <!-- ===== ЗИМА ===== -->
+      <symbol id="i-cocoa" viewBox="0 0 64 64">
+        <g filter="url(#wc)">
+          <path d="M24 20 q-4-5 0-9 q4-4 0-8 M34 20 q-4-5 0-9 q4-4 0-8" stroke="#c9b8a4" stroke-width="1.6" fill="none" opacity=".8"/>
+          <ellipse cx="30" cy="58" rx="24" ry="4.5" fill="#e6d7c3"/>
+          <path d="M44 32 q11 0 10 8 q-1 8-11 7" stroke="#c4574a" stroke-width="4" fill="none"/>
+          <rect x="14" y="24" width="32" height="32" rx="6" fill="#c4574a"/>
+          <ellipse cx="30" cy="25" rx="16" ry="4" fill="#7a4b33"/>
+          <rect x="20" y="19" width="7" height="7" rx="2" fill="#fffaf2" transform="rotate(-12 23 22)"/>
+          <rect x="29" y="18" width="7" height="7" rx="2" fill="#f6d2da" transform="rotate(10 32 21)"/>
+          <rect x="35" y="21" width="6" height="6" rx="2" fill="#fffaf2" transform="rotate(20 38 24)"/>
+          <g stroke="#fffaf2" stroke-width="1.2" stroke-linecap="round" opacity=".85">
+            <path d="M23 36 v8 M19.5 38 l7 4 M19.5 42 l7-4"/><path d="M37 38 v6 M34.4 39.5 l5.2 3 M34.4 42.5 l5.2-3"/>
+          </g>
+          <path d="M14 50 h32" stroke="#fffaf2" stroke-width="1.4" stroke-dasharray="2 2" opacity=".7"/>
+        </g>
+      </symbol>
+
+      <symbol id="i-fir" viewBox="0 0 64 64">
+        <g filter="url(#wc)">
+          <rect x="29" y="54" width="6" height="8" fill="#8a6248"/>
+          <path d="M32 26 L54 56 H10Z" fill="#6f8f6a"/>
+          <path d="M32 14 L49 40 H15Z" fill="#7f9a76"/>
+          <path d="M32 4 L44 24 H20Z" fill="#8fa98a"/>
+          <path d="M10 56 q6-4 11 0 q5-3 11 0 q6-3 11 0 q6-4 11 0z" fill="#fffdf8"/>
+          <path d="M15 40 q5-3 9 0 q4-2 8 0 q4-2 8 0 q5-3 9 0z" fill="#fffdf8"/>
+          <path d="M20 24 q4-2 6 0 q3-2 6 0 q3-2 6 0 q3-2 6 0z" fill="#fffdf8"/>
+          <g fill="#d9534f"><circle cx="24" cy="47" r="2"/><circle cx="40" cy="50" r="2"/><circle cx="35" cy="33" r="1.8"/></g>
+          <g fill="#f2c14e"><circle cx="28" cy="31" r="1.6"/><circle cx="45" cy="46" r="1.6"/><circle cx="32" cy="3" r="2.4"/></g>
+        </g>
+      </symbol>
+
+      <symbol id="i-mitten" viewBox="0 0 64 64">
+        <g filter="url(#wc)">
+          <g transform="translate(14 -2) rotate(12 30 40)">
+            <path d="M20 56 V30 q0-12 10-12 q10 0 10 12 v6 l4-4 q4-2 5 2 q1 3-3 7 l-6 7 V56z" fill="#9fb488"/>
+            <rect x="18" y="52" width="24" height="8" rx="2" fill="#f3ece0"/>
+          </g>
+          <path d="M14 58 V32 q0-12 10-12 q10 0 10 12 v6 l4-4 q4-2 5 2 q1 3-3 7 l-6 7 V58z" fill="#c46a3c"/>
+          <path d="M16 36 l4 3 4-3 4 3 4-3 M16 44 l4 3 4-3 4 3 4-3" stroke="#f3ece0" stroke-width="1.3" fill="none"/>
+          <rect x="12" y="54" width="24" height="9" rx="2" fill="#f3ece0"/>
+          <path d="M16 55 v7 M20 55 v7 M24 55 v7 M28 55 v7 M32 55 v7" stroke="#dcd0bc" stroke-width="1"/>
+        </g>
+      </symbol>
+
+      <symbol id="i-tangerines" viewBox="0 0 64 64">
+        <g filter="url(#wc)">
+          <circle cx="22" cy="36" r="10" fill="#ef8a2e"/>
+          <circle cx="41" cy="35" r="10" fill="#f29a3e"/>
+          <circle cx="31" cy="27" r="9" fill="#f4a64e"/>
+          <ellipse cx="34" cy="18" rx="6" ry="2.6" transform="rotate(-25 34 18)" fill="#7f9468"/>
+          <ellipse cx="44" cy="24" rx="5" ry="2.2" transform="rotate(25 44 24)" fill="#8fa57a"/>
+          <g fill="#fff" opacity=".35"><circle cx="18" cy="32" r="2"/><circle cx="37" cy="31" r="2"/><circle cx="28" cy="23" r="1.6"/></g>
+          <path d="M8 40 h48 q-2 19-24 19 q-22 0-24-19z" fill="#9bb0bf"/>
+          <path d="M10 44 h44" stroke="#fff" stroke-width="1" opacity=".5"/>
+          <g fill="#6f8fbf" opacity=".8"><ellipse cx="22" cy="50" rx="3" ry="1.3" transform="rotate(-30 22 50)"/><ellipse cx="32" cy="52" rx="3" ry="1.3"/><ellipse cx="42" cy="50" rx="3" ry="1.3" transform="rotate(30 42 50)"/></g>
+        </g>
+      </symbol>
+
+      <symbol id="i-pine" viewBox="0 0 64 64">
+        <g filter="url(#wc)">
+          <path d="M4 20 C 20 22 36 26 60 40" stroke="#7a5a3c" stroke-width="2.2" fill="none"/>
+          <g stroke="#5f7f5e" stroke-width="1.6" stroke-linecap="round">
+            <path d="M10 21 l-3-7 M10 21 l2-8 M10 21 l-5 5 M18 22 l-2-8 M18 22 l3-7 M18 22 l-3 7 M18 22 l3 7 M27 25 l-1-8 M27 25 l4-7 M27 25 l-3 7 M27 25 l4 7 M36 28 l0-8 M36 28 l5-6 M36 28 l-3 7 M45 33 l1-8 M45 33 l5-5 M45 33 l-2 7 M53 37 l3-7 M53 37 l-1 7"/>
+          </g>
+          <ellipse cx="30" cy="46" rx="8" ry="12" fill="#8b5e3c"/>
+          <g stroke="#b98352" stroke-width="1.2" fill="none"><path d="M23 40 q7 4 14 0"/><path d="M22.5 46 q7.5 4 15 0"/><path d="M23.5 52 q6.5 3 13 0"/><path d="M30 34 v24"/></g>
+          <g fill="#d9534f"><circle cx="46" cy="44" r="2.2"/><circle cx="50" cy="47" r="2"/><circle cx="45" cy="49" r="1.8"/></g>
+        </g>
+      </symbol>
+
+      <symbol id="i-gift" viewBox="0 0 64 64">
+        <g filter="url(#wc)">
+          <rect x="14" y="30" width="36" height="28" rx="2" fill="#d6b08a"/>
+          <rect x="11" y="23" width="42" height="9" rx="2" fill="#e4c6a0"/>
+          <path d="M32 23 v35 M14 44 h36" stroke="#c4574a" stroke-width="2.4"/>
+          <path d="M32 23 C 22 12 16 20 24 23 M32 23 C 42 12 48 20 40 23" stroke="#c4574a" stroke-width="2.4" fill="none"/>
+          <g stroke="#5f7f5e" stroke-width="1.4" stroke-linecap="round"><path d="M38 20 l8-6 M41 18 l-1-4 M44 16 l1-4 M42 17 l4 1"/></g>
+          <g fill="#fffaf2" opacity=".7"><circle cx="20" cy="38" r="1"/><circle cx="44" cy="52" r="1"/><circle cx="24" cy="53" r="1"/><circle cx="42" cy="37" r="1"/></g>
+        </g>
+      </symbol>
+
+      <!-- ===== КРУГЛЫЙ ГОД ===== -->
+      <symbol id="i-plant" viewBox="0 0 64 64">
+        <g filter="url(#wc)">
+          <g opacity=".92">
+            <ellipse cx="22" cy="28" rx="11" ry="5" transform="rotate(-40 22 28)" fill="#8fa57a"/>
+            <ellipse cx="42" cy="26" rx="11" ry="5" transform="rotate(35 42 26)" fill="#7f9468"/>
+            <ellipse cx="31" cy="18" rx="10" ry="4.5" transform="rotate(-85 31 18)" fill="#a7b98f"/>
+            <ellipse cx="17" cy="38" rx="10" ry="4.5" transform="rotate(-10 17 38)" fill="#9fb488"/>
+            <ellipse cx="47" cy="37" rx="10" ry="4.5" transform="rotate(15 47 37)" fill="#8fa57a"/>
+            <ellipse cx="38" cy="14" rx="8" ry="4" transform="rotate(-60 38 14)" fill="#7f9468"/>
+          </g>
+          <path d="M20 44 h24 l-3 17 h-18z" fill="#cf8a5c"/>
+          <rect x="18" y="41" width="28" height="6" rx="2" fill="#dc9d70"/>
+          <path d="M24 52 q8 3 16 0" stroke="#b86e44" stroke-width="1" fill="none" opacity=".6"/>
+        </g>
+      </symbol>
+
+      <symbol id="i-berries" viewBox="0 0 64 64">
+        <g filter="url(#wc)">
+          <path d="M37 24 L44 4" stroke="#7aa0c4" stroke-width="2.6" stroke-linecap="round"/>
+          <path d="M21 20 h22 l-3 39 h-16z" fill="#f1b7c4" opacity=".9"/>
+          <ellipse cx="32" cy="20" rx="11" ry="3.2" fill="#f7d6de"/>
+          <path d="M22 30 h20" stroke="#fff" stroke-width="1.2" opacity=".5"/>
+          <circle cx="12" cy="56" r="4" fill="#5d6fa8"/><circle cx="18.5" cy="59" r="3.5" fill="#6f7fb6"/><circle cx="10" cy="49" r="3" fill="#7d8cc0"/>
+          <path d="M48 52 q0-6 6-6 q6 0 6 6 q-2 8-6 10 q-4-2-6-10z" fill="#e05a5a"/>
+          <path d="M50 47 l4-3 4 3 -4 1z" fill="#7f9468"/>
+          <g fill="#f7d57a"><circle cx="52" cy="53" r=".6"/><circle cx="56" cy="54" r=".6"/><circle cx="54" cy="57" r=".6"/></g>
+        </g>
+      </symbol>
+
+      <symbol id="i-candle" viewBox="0 0 64 64">
+        <g filter="url(#wc)">
+          <circle cx="32" cy="16" r="11" fill="#f8d77a" opacity=".3"/>
+          <rect x="8" y="53" width="48" height="8" rx="1.5" fill="#9fb488"/>
+          <rect x="12" y="45" width="40" height="8" rx="1.5" fill="#e9a3a8"/>
+          <path d="M14 49 h36" stroke="#fff" stroke-width=".8" opacity=".5"/>
+          <path d="M10 57 h44" stroke="#fff" stroke-width=".8" opacity=".5"/>
+          <rect x="23" y="23" width="18" height="22" rx="3" fill="#f6ead6" stroke="#e0cdb0" stroke-width="1"/>
+          <rect x="26" y="30" width="12" height="8" rx="1" fill="#fffaf2" opacity=".9"/>
+          <path d="M32 22 v-3" stroke="#6a5444" stroke-width="1"/>
+          <ellipse cx="32" cy="14" rx="3.4" ry="6.5" fill="#f2a93d"/>
+          <ellipse cx="32" cy="15.5" rx="1.6" ry="3.4" fill="#fff2b0"/>
+        </g>
+      </symbol>
+
+      <symbol id="i-coffee" viewBox="0 0 64 64">
+        <g filter="url(#wc)">
+          <path d="M24 20 q-4-5 0-9 q4-4 0-8 M34 20 q-4-5 0-9 q4-4 0-8" stroke="#c9b8a4" stroke-width="1.6" fill="none" opacity=".8"/>
+          <ellipse cx="31" cy="55" rx="25" ry="5.5" fill="#e6d7c3"/>
+          <path d="M47 33 q10 0 9 7 q-1 7-11 6" stroke="#efe4d4" stroke-width="4" fill="none"/>
+          <path d="M12 27 h38 v7 q0 17-19 17 q-19 0-19-17z" fill="#f7efe3"/>
+          <ellipse cx="31" cy="27" rx="19" ry="4.5" fill="#b0764a"/>
+          <path d="M31 30 c-3-2-5-1-5 .5 c0 1.6 3 3 5 4 c2-1 5-2.4 5-4 c0-1.5-2-2.5-5-.5z" fill="#f3e2c8"/>
+          <g fill="#6f8fbf" opacity=".85">
+            <ellipse cx="20" cy="40" rx="3" ry="1.4" transform="rotate(-30 20 40)"/>
+            <ellipse cx="25" cy="43" rx="3" ry="1.4" transform="rotate(30 25 43)"/>
+            <ellipse cx="37" cy="40" rx="3" ry="1.4" transform="rotate(-30 37 40)"/>
+            <ellipse cx="42" cy="43" rx="3" ry="1.4" transform="rotate(30 42 43)"/>
+          </g>
+          <path d="M22.5 38 v8 M39.5 38 v8" stroke="#6f8fbf" stroke-width=".8" opacity=".7"/>
+        </g>
+      </symbol>
+
+      <!-- иконки таббара -->
+      <symbol id="t-week" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3" y="4" width="8" height="7" rx="2"/><rect x="13" y="4" width="8" height="7" rx="2"/><rect x="3" y="13" width="8" height="7" rx="2"/><rect x="13" y="13" width="8" height="7" rx="2"/></g></symbol>
+      <symbol id="t-day" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/></g></symbol>
+      <symbol id="t-cal" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/><circle cx="8" cy="15" r=".8" fill="currentColor"/><circle cx="12" cy="15" r=".8" fill="currentColor"/><circle cx="16" cy="15" r=".8" fill="currentColor"/></g></symbol>
+      <symbol id="t-set" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="7" r="3.2"/><circle cx="17" cy="12" r="3.2"/><circle cx="12" cy="17" r="3.2"/><circle cx="7" cy="12" r="3.2"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/></g></symbol>
+    </defs>
+  </svg>
+
+  <main id="view" class="view"></main>
+
+  <nav class="tabbar" aria-label="Разделы">
+    <a href="#/week" data-tab="week"><svg class="ti"><use href="#t-week"/></svg><span>Неделя</span></a>
+    <a href="#/day" data-tab="day"><svg class="ti"><use href="#t-day"/></svg><span>Сегодня</span></a>
+    <a href="#/calendar" data-tab="calendar"><svg class="ti"><use href="#t-cal"/></svg><span>Календарь</span></a>
+    <a href="#/settings" data-tab="settings"><svg class="ti"><use href="#t-set"/></svg><span>Настройки</span></a>
+  </nav>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <input type="file" id="restoreInput" accept="application/json,.json" hidden>
+
+  <script src="app.js"></script>
+</body>
+</html>
