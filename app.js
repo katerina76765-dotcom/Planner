@@ -438,10 +438,23 @@ function viewDay(dISO) {
         <i><em style="width:${pct}%"></em></i>
       </div>`;
   }).join('');
-  const foodRows = food.map((x) => `
+  const foodRows = food.map((x) => ui.editFood === x.id ? `
+      <li class="food-row editing">
+        <form class="food-add food-edit" data-form="editFood" data-d="${dISO}" data-id="${x.id}">
+          <input name="name" class="fa-name" value="${esc(x.name)}" placeholder="Что съели" autocomplete="off">
+          <div class="fa-nums">
+            ${NUTR.map((n) => `<label><span>${n.short}</span><input name="${n.k}" inputmode="decimal" autocomplete="off" value="${num(x[n.k]) || ''}" placeholder="0"></label>`).join('')}
+            <span></span>
+          </div>
+          <div class="fe-actions">
+            <button class="btn soft" type="button" data-act="foodEditCancel">Отмена</button>
+            <button class="btn" type="submit">Сохранить</button>
+          </div>
+        </form>
+      </li>` : `
       <li class="food-row">
-        <div class="fr-main"><span class="fr-name">${esc(x.name || 'Без названия')}</span>
-          <span class="fr-nums">${num(x.kcal)} ккал · Б ${num(x.p)} · Ж ${num(x.f)} · У ${num(x.c)} · Кл ${num(x.fib)}</span></div>
+        <button class="fr-main" data-act="foodEdit" data-id="${x.id}" aria-label="Изменить запись"><span class="fr-name">${esc(x.name || 'Без названия')} <span class="fr-pen">✎</span></span>
+          <span class="fr-nums">${num(x.kcal)} ккал · Б ${num(x.p)} · Ж ${num(x.f)} · У ${num(x.c)} · Кл ${num(x.fib)}</span></button>
         <button class="del" data-act="foodDel" data-d="${dISO}" data-id="${x.id}" aria-label="Удалить">×</button>
       </li>`).join('');
   const foodOpen = ui.foodOpen ?? food.length > 0;
@@ -794,8 +807,12 @@ const actions = {
   },
   foodDel(el) {
     const d = getDay(el.dataset.d); if (!d) return;
-    d.food = d.food.filter((x) => x.id !== el.dataset.id); save(); render();
+    const x = d.food.find((y) => y.id === el.dataset.id);
+    if (x && !confirm(`Удалить «${x.name || 'запись'}»?`)) return;
+    d.food = d.food.filter((y) => y.id !== el.dataset.id); save(); render();
   },
+  foodEdit(el) { ui.editFood = el.dataset.id; pendingFocus = '.food-edit .fa-name'; render(); },
+  foodEditCancel() { ui.editFood = null; render(); },
   unpin(el) {
     const dISO = el.dataset.d; const id = el.dataset.id;
     const f = S.fixed.find((x) => x.id === id) || (fixedFor(dISO).find((x) => x.id === id));
@@ -878,6 +895,11 @@ document.addEventListener('submit', (e) => {
     if (!entry.name && NUTR.every((n) => !entry[n.k])) { toast('Введите название или цифры'); return; }
     ensureDay(f.dataset.d).food.push(entry);
     ui.foodOpen = true; save(); render();
+  } else if (kind === 'editFood') {
+    const d = getDay(f.dataset.d); const x = d && d.food.find((y) => y.id === f.dataset.id); if (!x) return;
+    x.name = f.name.value.trim();
+    NUTR.forEach((n) => { x[n.k] = num(f[n.k].value); });
+    ui.editFood = null; save(); render(); toast('Запись обновлена ✓');
   }
 });
 
