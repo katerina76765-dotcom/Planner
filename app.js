@@ -412,14 +412,12 @@ function viewDay(dISO) {
   const fixedHtml = fixedFor(dISO).map((f) => {
     const done = !!(rec && rec.fixedDone[f.id]);
     const tpl = S.fixed.find((x) => x.id === f.id);
-    const lbl = daysLabel(tpl || f);
     const editing = !isPast && tpl && ui.editDays === f.id;
+    // подписи «каждый день / ср, пт» не показываем — дни выбираются по нажатию на название
     return `
       <li class="task fixed ${done ? 'done' : ''}">
-        <span class="t-txt">${esc(f.title)}
-          ${isPast || !tpl ? `<small class="days-lbl static">${lbl}</small>`
-            : `<button class="days-lbl" data-act="editDays" data-id="${f.id}">${lbl} ▾</button>`}
-        </span>
+        ${isPast || !tpl ? `<span class="t-txt">${esc(f.title)}</span>`
+          : `<button class="t-txt t-btn" data-act="editDays" data-id="${f.id}" aria-label="Выбрать дни недели">${esc(f.title)}</button>`}
         ${isPast ? `<span class="pin-btn on static">${pinSvg()}</span>`
           : `<button class="pin-btn on" data-act="unpin" data-d="${dISO}" data-id="${f.id}" aria-label="Открепить">${pinSvg()}</button>`}
         <button class="heart-btn ${f.fav ? 'on' : ''}" data-act="fixFav" data-d="${dISO}" data-id="${f.id}" aria-label="Показать в неделе">${heartSvg()}</button>
@@ -768,7 +766,7 @@ const actions = {
       if (t.done) d.fixedDone[nf.id] = true;
     }
     syncTodayFixed(); ui.editDays = nf.id; save(); render();
-    toast('Закреплено 📌 Выберите дни недели под делом');
+    toast('Закреплено 📌 Дни недели — нажмите на название');
   },
   editDays(el) { ui.editDays = ui.editDays === el.dataset.id ? null : el.dataset.id; render(); },
   fixDay(el) {
