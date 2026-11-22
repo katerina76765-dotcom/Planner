@@ -564,3 +564,64 @@ button { cursor: pointer; border: 0; background: none; padding: 0; }
 .norm-row span { flex: 1; font-weight: 700; }
 .norm-row input { width: 90px; height: 38px; border: 1px solid var(--line); border-radius: 10px; text-align: center; font-size: 16px; background: #fff; }
 .norm-row em { width: 34px; font-style: normal; color: var(--ink-soft); font-size: 13px; }
+
+/* ================= v2 ================= */
+/* энергия за день */
+.en-field { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.en-field span { flex: 1; font-weight: 700; font-size: 14px; }
+.en-field small { font-weight: 400; color: var(--ink-soft); font-size: 11.5px; }
+.en-field input { width: 92px; height: 40px; border: 1px solid var(--line); border-radius: 10px; text-align: center; font-size: 16px; background: #fff; }
+.en-field input::placeholder { color: var(--ink-faint); }
+.en-field em { width: 34px; font-style: normal; color: var(--ink-soft); font-size: 13px; }
+.ctrl-weigh { margin: 4px 0 6px; padding: 10px 12px; border-radius: 14px; background: rgba(233, 163, 168, .16); border: 1.5px dashed rgba(217, 112, 127, .45); }
+.ctrl-weigh .en-field { border-bottom: 0; padding-bottom: 0; }
+.cw-head { font-size: 14.5px; }
+.en-rows { margin-top: 10px; display: grid; gap: 4px; }
+.en-rows > div { display: flex; justify-content: space-between; gap: 8px; font-size: 13.5px; color: var(--ink-soft); }
+.en-rows > div b { color: var(--ink); font-weight: 700; white-space: nowrap; }
+.en-rows small { font-size: 11px; }
+.en-rows .en-total { padding-top: 6px; margin-top: 2px; border-top: 1px dashed var(--line); color: var(--ink); font-weight: 700; }
+.deficit {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin-top: 10px; padding: 10px 14px; border-radius: 14px;
+  background: rgba(127, 148, 104, .16); border: 1.5px solid rgba(127, 148, 104, .45);
+}
+.deficit span { font-weight: 800; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; }
+.deficit b { font-family: var(--hand); font-size: 30px; line-height: 1; color: #5d7247; }
+.deficit.plus { background: rgba(232, 196, 106, .18); border-color: rgba(211, 154, 50, .45); }
+.deficit.plus b { color: #a97a1f; }
+.deficit.strong { background: rgba(196, 106, 60, .12); border-color: rgba(196, 106, 60, .5); }
+.deficit.strong b { color: var(--terracotta); }
+.en-warn { margin: 6px 0 0; color: var(--terracotta); }
+.en-missing { margin: 10px 0 0; }
+
+.switch-row button.switch { margin-left: auto; }
+.switch { width: 50px; height: 30px; border-radius: 999px; background: var(--line); position: relative; flex: none; transition: background .2s; }
+.switch i { position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .2); transition: left .2s; }
+.switch.on { background: var(--sage); }
+.switch.on i { left: 23px; }
+.norm-row small { font-weight: 400; font-size: 11.5px; }
+
+/* календарь: весы */
+.cell .cweigh { position: absolute; top: 2px; right: 3px; font-size: 10px; line-height: 1; }
+.cell .cweigh.plan { opacity: .45; }
+.cell .ndot { top: 16px; }
+
+/* график веса */
+.weight-chart { width: 100%; height: auto; display: block; margin-top: 6px; overflow: visible; }
+.wc-grid { stroke: var(--line); stroke-width: 1; }
+.wc-axis { font-size: 10px; fill: var(--ink-soft); font-family: var(--body); }
+.wc-line { fill: none; stroke: var(--terracotta); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.wc-dot { fill: var(--terracotta); stroke: #fffcf5; stroke-width: 2; }
+.wc-dot.on { r: 6.5; }
+.wc-hit { fill: transparent; cursor: pointer; }
+.wc-label { font-size: 12px; font-weight: 800; fill: var(--ink); font-family: var(--body); }
+.wc-tip rect { fill: var(--ink); }
+.wc-tip text { fill: #fffaf2; font-size: 10.5px; font-weight: 700; font-family: var(--body); }
+.wc-sum { display: flex; flex-wrap: wrap; gap: 4px 16px; justify-content: center; font-size: 13px; color: var(--ink-soft); margin-top: 4px; }
+.wc-sum b { color: var(--ink); }
+.wc-table { margin-top: 8px; font-size: 13px; }
+.wc-table summary { color: var(--terracotta); font-weight: 700; cursor: pointer; }
+.wc-table table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+.wc-table td { padding: 4px 2px; border-bottom: 1px solid var(--line); }
+.wc-table td:last-child { text-align: right; font-weight: 700; }

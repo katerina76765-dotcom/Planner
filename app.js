@@ -22,7 +22,10 @@ const MOODS = [
 ];
 const moodOf = (v) => MOODS.find((m) => m.v === v);
 
-const APP_VERSION = 'v1';
+const APP_VERSION = 'v2';
+const PROFILE_DEFAULT = { height: null, birthYear: null, ctrlDay: 1, cycleAdj: true, cycleLen: 28 };
+const NEAT = 1.2;            // бытовая активность: базовый обмен × 1.2
+const LUTEAL_PCT = 0.08;     // во второй половине цикла расход в покое выше примерно на 5–10%
 // Питание: поля, подписи и нормы по умолчанию (меняются в настройках)
 const NUTR = [
   { k: 'kcal', t: 'Калории', s: 'ккал', short: 'Ккал' },
@@ -47,6 +50,7 @@ const dropSvg = (cls = '') => `<svg class="ds ${cls}" viewBox="0 0 24 24" aria-h
 const starSvg = (cls = '') => `<svg class="ss ${cls}" viewBox="0 0 24 24" aria-hidden="true"><use href="#star"/></svg>`;
 const drops = (n, cls = '') => n ? `<span class="drops ${cls}">${dropSvg().repeat(n)}</span>` : '';
 const ui = { foodOpen: null };
+const fmtNum = (n) => String(Math.round(n * 10) / 10).replace('.', ',');
 
 /* ---------- сезоны: картинки, фразы, акценты ---------- */
 const SEASONS = {
@@ -117,6 +121,7 @@ function defaults() {
       { id: uid(), icon: '💛', title: 'Благодарность', color: HABIT_COLORS[1] }
     ],
     norms: { ...NORMS_DEFAULT },
+    profile: { ...PROFILE_DEFAULT },
     days: {},
     weeks: {},
     lastBackup: null
@@ -142,10 +147,11 @@ function migrate(s) {
     delete w.note;
   }
   return {
-    version: 4,
+    version: 5,
     fixed: Array.isArray(s.fixed) ? s.fixed : base.fixed,
     habits: Array.isArray(s.habits) ? s.habits : base.habits,
     norms: { ...NORMS_DEFAULT, ...(s.norms || {}) },
+    profile: { ...PROFILE_DEFAULT, ...(s.profile || {}) },
     days,
     weeks,
     lastBackup: s.lastBackup || null
@@ -214,8 +220,80 @@ const hasActivity = (dISO) => {
   const d = getDay(dISO);
   if (!d) return false;
   return d.tasks.length > 0 || Object.values(d.fixedDone || {}).some(Boolean) || Object.values(d.habits).some(Boolean)
-    || !!(d.note && d.note.trim()) || !!d.mood || !!d.period || (d.food && d.food.length > 0);
+    || !!(d.note && d.note.trim()) || !!d.mood || !!d.period || (d.food && d.food.length > 0)
+    || !!d.weight || !!d.active;
 };
+
+/* ---------- энергия: расход, дефицит, цикл, вес ---------- */
+// последний известный вес на эту дату (контрольный или любой другой)
+function weightOn(dISO) {
+  const keys = Object.keys(S.days).filter((k) => k <= dISO && S.days[k].weight).sort();
+  return keys.length ? num(S.days[keys[keys.length - 1]].weight) : 0;
+}
+// дата контрольного взвешивания в месяце этой даты
+function ctrlDateFor(dISO) {
+  const d = parseISO(dISO);
+  const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  return `${dISO.slice(0, 7)}-${pad(Math.min(Math.max(1, Number(S.profile.ctrlDay) || 1), last))}`;
+}
+function ctrlDoneInMonth(dISO) {
+  const ym = dISO.slice(0, 7);
+  return Object.keys(S.days).some((k) => k.startsWith(ym) && S.days[k].weightCtrl && S.days[k].weight);
+}
+// показывать «контрольное взвешивание» в этот день?
+function isCtrlDay(dISO) {
+  const d = getDay(dISO);
+  if (d && d.weightCtrl) return true;
+  const c = ctrlDateFor(dISO);
+  if (dISO === c) return true;
+  // пропустили — напоминаем в следующие дни месяца, но не в будущем
+  return dISO > c && dISO <= todayISO() && !ctrlDoneInMonth(dISO);
+}
+// начала месячных: день с капелькой, перед которым капельки не было
+function periodStarts() {
+  return Object.keys(S.days).filter((k) => S.days[k].period).sort()
+    .filter((k) => { const p = S.days[iso(addDays(parseISO(k), -1))]; return !(p && p.period); });
+}
+function cycleLength(starts) {
+  const lens = [];
+  for (let i = 1; i < starts.length; i++) {
+    const L = Math.round((parseISO(starts[i]) - parseISO(starts[i - 1])) / 864e5);
+    if (L >= 21 && L <= 40) lens.push(L);
+  }
+  const recent = lens.slice(-6);
+  return recent.length ? Math.round(recent.reduce((a, b) => a + b, 0) / recent.length) : (Number(S.profile.cycleLen) || 28);
+}
+// фаза цикла на дату (оценка): вторая половина — 14 дней перед ожидаемыми месячными
+function cyclePhase(dISO) {
+  const starts = periodStarts();
+  const last = starts.filter((k) => k <= dISO).pop();
+  if (!last) return null;
+  const L = cycleLength(starts);
+  const day = Math.round((parseISO(dISO) - parseISO(last)) / 864e5) + 1;
+  if (day > L + 7) return null; // слишком давно не было отметок — не гадаем
+  return { day, len: L, luteal: day > L - 14 && day <= L + 7 && !(getDay(dISO) && getDay(dISO).period) };
+}
+function energy(dISO) {
+  const p = S.profile;
+  const w = weightOn(dISO);
+  const h = num(p.height);
+  const age = p.birthYear ? parseISO(dISO).getFullYear() - Number(p.birthYear) : 0;
+  const missing = [];
+  if (!h) missing.push('рост');
+  if (!age || age < 10 || age > 100) missing.push('год рождения');
+  if (!w) missing.push('вес');
+  const d = getDay(dISO);
+  const active = d ? num(d.active) : 0;
+  const eaten = foodTotals(dISO).kcal;
+  if (missing.length) return { missing, active, eaten, weight: w };
+  const bmr = 10 * w + 6.25 * h - 5 * age - 161; // Миффлин — Сан-Жеор, для женщин
+  const phase = p.cycleAdj ? cyclePhase(dISO) : null;
+  const cycle = phase && phase.luteal ? Math.round(bmr * LUTEAL_PCT) : 0;
+  const base = Math.round(bmr * NEAT);
+  const total = base + Math.round(active) + cycle;
+  const hasFood = !!(d && d.food && d.food.length);
+  return { missing: null, weight: w, bmr: Math.round(bmr), base, active, cycle, phase, total, eaten, hasFood, deficit: total - eaten };
+}
 
 /* ---------- маршрутизация ---------- */
 function parseRoute() {
@@ -556,9 +634,58 @@ function viewDay(dISO) {
       <a class="link" href="#/settings" style="display:inline-block;margin-top:8px">Изменить дневную норму →</a>
     </details>
 
+    ${energyCard(dISO, rec)}
+
     ${undone ? `<div style="margin-top:14px"><button class="btn soft block" data-act="carry" data-d="${dISO}">Перенести невыполненное (${undone}) на ${dISO === today ? 'завтра' : 'следующий день'} →</button></div>` : ''}
     ${garden(season, 'Маленькие шаги —<br>большие перемены')}
   `;
+}
+
+function energyCard(dISO, rec) {
+  const e = energy(dISO);
+  const ctrl = isCtrlDay(dISO);
+  const ownWeight = rec && rec.weight ? fmtNum(num(rec.weight)) : '';
+  const ctrlMissed = ctrl && dISO !== ctrlDateFor(dISO) && !(rec && rec.weightCtrl);
+  const weightBlock = ctrl ? `
+      <div class="ctrl-weigh">
+        <div class="cw-head">⚖️ <b>Контрольное взвешивание</b></div>
+        <p class="hint" style="margin:2px 0 8px">${ctrlMissed ? 'В этом месяце ещё не было — можно взвеситься сегодня.' : 'Раз в месяц, утром натощак — по этим точкам строится график веса в календаре.'}</p>
+        <label class="en-field"><span>Вес</span><input inputmode="decimal" value="${ownWeight}" data-input="weight" data-d="${dISO}" data-ctrl="1" placeholder="${e.weight ? fmtNum(e.weight) : '0'}"><em>кг</em></label>
+      </div>` : `
+      <label class="en-field"><span>Вес <small>(если взвешивались)</small></span><input inputmode="decimal" value="${ownWeight}" data-input="weight" data-d="${dISO}" placeholder="${e.weight ? fmtNum(e.weight) : '—'}"><em>кг</em></label>`;
+
+  let calc;
+  if (e.missing) {
+    calc = `<p class="hint en-missing">Для расчёта не хватает: <b>${e.missing.join(', ')}</b>.
+      ${e.missing.includes('вес') ? 'Вес можно вписать выше. ' : ''}${e.missing.some((m) => m !== 'вес') ? '<a class="link" href="#/settings">Заполнить в настройках →</a>' : ''}</p>`;
+  } else {
+    const share = e.total ? e.deficit / e.total : 0;
+    const strong = e.hasFood && share > 0.25;
+    const label = !e.hasFood ? '' : e.deficit >= 0 ? 'Дефицит' : 'Профицит';
+    calc = `
+      <div class="en-rows">
+        <div><span>Обмен в покое × ${String(NEAT).replace('.', ',')}</span><b>${e.base}</b></div>
+        <div><span>Активные калории</span><b>${e.active ? '+' + Math.round(e.active) : '0'}</b></div>
+        ${S.profile.cycleAdj ? `<div><span>Фаза цикла ${e.phase ? `<small>(${e.phase.day}-й день из ~${e.phase.len})</small>` : '<small>(нет отметок)</small>'}</span><b>${e.cycle ? '+' + e.cycle : '0'}</b></div>` : ''}
+        <div class="en-total"><span>Расход за день</span><b>≈ ${e.total} ккал</b></div>
+        <div><span>Съедено</span><b>${e.hasFood ? Math.round(e.eaten) + ' ккал' : '—'}</b></div>
+      </div>
+      ${e.hasFood ? `
+        <div class="deficit ${e.deficit >= 0 ? 'minus' : 'plus'} ${strong ? 'strong' : ''}">
+          <span>${label}</span><b>${Math.abs(Math.round(e.deficit))} ккал</b>
+        </div>
+        ${strong ? '<p class="hint en-warn">Дефицит больше 25% от расхода — это много. Слишком жёсткий дефицит может сказаться на самочувствии и цикле. 🌿</p>' : ''}`
+        : '<p class="hint" style="margin-top:8px">Добавьте приёмы пищи в «Питание» — и здесь появится дефицит.</p>'}
+      <p class="hint" style="margin:8px 0 0">Это оценка по формуле, точность ±10%. Вес: ${fmtNum(e.weight)} кг.</p>`;
+  }
+
+  return `
+    <section class="card tape energy-card" style="--tape:rgba(147,184,214,.5)">
+      <h2 class="sec-title" style="--hl:rgba(147,184,214,.45)">Энергия за день</h2>
+      ${weightBlock}
+      <label class="en-field"><span>Активные калории <small>(часы, тренировка)</small></span><input inputmode="decimal" value="${rec && rec.active ? fmtNum(num(rec.active)) : ''}" data-input="active" data-d="${dISO}" placeholder="0"><em>ккал</em></label>
+      ${calc}
+    </section>`;
 }
 
 /* ---------- экран: заметки дня ---------- */
@@ -605,7 +732,7 @@ function viewCalendar(ym) {
 
   let cells = WD_SHORT.map((w) => `<div class="wd">${w}</div>`).join('');
   for (let k = 0; k < wdIndex(first); k++) cells += '<div class="cell blank"></div>';
-  let active = 0, tasksDone = 0, sumPct = 0, withTasks = 0, notes = 0, periodDays = 0;
+  let active = 0, tasksDone = 0, sumPct = 0, withTasks = 0, notes = 0, periodDays = 0, defSum = 0, defDays = 0;
   const moodCount = {};
   for (let n = 1; n <= daysIn; n++) {
     const dISO = `${ym}-${pad(n)}`;
@@ -626,8 +753,14 @@ function viewCalendar(ym) {
     cells += `<a class="cell ${dISO === today ? 'today' : ''} ${dISO > today ? 'future' : ''}" href="#/day/${dISO}" style="${style}">
         ${mood ? `<span class="cmood">${mood.e}</span>` : ''}
         ${n}${act && st.total ? `<span class="pct">${st.done}/${st.total}</span>` : ''}${hasNote ? '<span class="ndot"></span>' : ''}
-        ${drops(rec && rec.period, 'cdrops')}</a>`;
+        ${drops(rec && rec.period, 'cdrops')}
+        ${rec && rec.weightCtrl && rec.weight ? '<span class="cweigh" title="Контрольное взвешивание">⚖️</span>'
+          : dISO === ctrlDateFor(dISO) && dISO >= today ? '<span class="cweigh plan" title="День контрольного взвешивания">⚖️</span>' : ''}</a>`;
     if (rec && rec.period) periodDays++;
+    if (rec && rec.food && rec.food.length && dISO <= today) {
+      const e = energy(dISO);
+      if (!e.missing) { defSum += e.deficit; defDays++; }
+    }
   }
   const topMood = Object.entries(moodCount).sort((a, b) => b[1] - a[1])[0];
   const top = topMood ? moodOf(Number(topMood[0])) : null;
@@ -676,8 +809,67 @@ function viewCalendar(ym) {
       ${top ? `<p class="muted" style="text-align:center;margin:12px 0 0">Чаще всего настроение: <span style="font-size:18px">${top.e}</span> ${top.t.toLowerCase()}</p>` : ''}
       ${notes ? `<p class="muted" style="text-align:center;margin:6px 0 0">Заметок за месяц: ${notes}</p>` : ''}
       ${periodDays ? `<p class="muted" style="text-align:center;margin:6px 0 0">${dropSvg('inline')} Дней месячных: ${periodDays}</p>` : ''}
+      ${defDays ? `<p class="muted" style="text-align:center;margin:6px 0 0">Средний ${defSum >= 0 ? 'дефицит' : 'профицит'}: <b>${Math.abs(Math.round(defSum / defDays))} ккал</b> в день <small>(дней с питанием: ${defDays})</small></p>` : ''}
     </section>
+    ${weightChart(ym)}
     ${garden(season, 'Каждый день —<br>новая страница')}`;
+}
+
+/* ---------- график веса (по контрольным взвешиваниям) ---------- */
+function weightChart(ym) {
+  const endISO = `${ym}-31`;
+  const pts = Object.keys(S.days).filter((k) => k <= endISO && S.days[k].weightCtrl && S.days[k].weight).sort()
+    .map((k) => ({ k, w: num(S.days[k].weight), d: parseISO(k) })).slice(-12);
+  const head = `<h2 class="sec-title" style="--hl:rgba(233,163,168,.45)">Вес ⚖️</h2>`;
+  if (!pts.length) {
+    return `<section class="card tape" style="--tape:rgba(233,163,168,.55)">${head}
+      <p class="hint" style="margin:4px 0 0">Здесь будет график по контрольным взвешиваниям — раз в месяц, ${S.profile.ctrlDay || 1}-го числа. В этот день на странице дня появится поле ⚖️.</p></section>`;
+  }
+  const W = 340, H = 170, L = 36, R = 44, T = 18, B = 26;
+  const ws = pts.map((p) => p.w);
+  let lo = Math.min(...ws), hi = Math.max(...ws);
+  if (hi - lo < 2) { const mid = (hi + lo) / 2; lo = mid - 1; hi = mid + 1; }
+  lo = Math.floor(lo - 0.3); hi = Math.ceil(hi + 0.3);
+  const t0 = pts[0].d.getTime(), t1 = pts[pts.length - 1].d.getTime();
+  const xOf = (p) => pts.length === 1 ? L + (W - L - R) / 2 : L + ((p.d.getTime() - t0) / (t1 - t0)) * (W - L - R);
+  const yOf = (w) => T + (1 - (w - lo) / (hi - lo)) * (H - T - B);
+  const ticks = [lo, (lo + hi) / 2, hi];
+  const grid = ticks.map((v) => `<line x1="${L}" x2="${W - R + 30}" y1="${yOf(v)}" y2="${yOf(v)}" class="wc-grid"/><text x="${L - 6}" y="${yOf(v) + 4}" class="wc-axis" text-anchor="end">${fmtNum(v)}</text>`).join('');
+  const path = pts.map((p, i) => `${i ? 'L' : 'M'}${xOf(p).toFixed(1)},${yOf(p.w).toFixed(1)}`).join(' ');
+  const MON_SHORT = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+  const step = Math.ceil(pts.length / 6);
+  const xl = pts.map((p, i) => (i % step === 0 || i === pts.length - 1)
+    ? `<text x="${xOf(p)}" y="${H - 6}" class="wc-axis" text-anchor="middle">${MON_SHORT[p.d.getMonth()]}</text>` : '').join('');
+  const last = pts[pts.length - 1];
+  const sel = pts.find((p) => p.k === ui.wPoint);
+  const marks = pts.map((p) => `
+      <circle cx="${xOf(p)}" cy="${yOf(p.w)}" r="5" class="wc-dot ${sel === p ? 'on' : ''}"/>
+      <circle cx="${xOf(p)}" cy="${yOf(p.w)}" r="16" class="wc-hit" data-act="wPoint" data-k="${p.k}"><title>${p.d.getDate()} ${MONTHS_GEN[p.d.getMonth()]}: ${fmtNum(p.w)} кг</title></circle>`).join('');
+  const tip = sel ? (() => {
+    const x = Math.min(Math.max(xOf(sel), L + 40), W - 40), y = yOf(sel.w) - 14;
+    return `<g class="wc-tip"><rect x="${x - 44}" y="${y - 22}" width="88" height="22" rx="7"/><text x="${x}" y="${y - 7}" text-anchor="middle">${sel.d.getDate()} ${MONTHS_GEN[sel.d.getMonth()].slice(0, 3)} · ${fmtNum(sel.w)} кг</text></g>`;
+  })() : '';
+  const prev = pts.length > 1 ? pts[pts.length - 2] : null;
+  const delta = (a, b) => { const v = Math.round((a - b) * 10) / 10; return (v > 0 ? '+' : v < 0 ? '−' : '±') + fmtNum(Math.abs(v)); };
+  return `
+    <section class="card tape" style="--tape:rgba(233,163,168,.55)">
+      ${head}
+      <svg class="weight-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="График веса по контрольным взвешиваниям">
+        ${grid}
+        ${pts.length > 1 ? `<path d="${path}" class="wc-line"/>` : ''}
+        ${marks}
+        <text x="${xOf(last) + 9}" y="${yOf(last.w) + 4}" class="wc-label">${fmtNum(last.w)}</text>
+        ${xl}
+        ${tip}
+      </svg>
+      <div class="wc-sum">
+        ${prev ? `<span>С прошлого раза: <b>${delta(last.w, prev.w)} кг</b></span>` : '<span>График появится со второго контрольного взвешивания</span>'}
+        ${pts.length > 2 ? `<span>С начала: <b>${delta(last.w, pts[0].w)} кг</b></span>` : ''}
+      </div>
+      <details class="wc-table"><summary>Таблица</summary>
+        <table>${pts.slice().reverse().map((p) => `<tr><td>${p.d.getDate()} ${MONTHS_GEN[p.d.getMonth()]} ${p.d.getFullYear()}</td><td>${fmtNum(p.w)} кг</td></tr>`).join('')}</table>
+      </details>
+    </section>`;
 }
 
 /* ---------- экран: настройки ---------- */
@@ -723,6 +915,22 @@ function viewSettings() {
       <h2 class="sec-title" style="--hl:rgba(235,165,116,.45)">Дневная норма питания</h2>
       <p class="hint">С ней сравниваются записи в разделе «Питание» на странице дня.</p>
       <div class="norms">${normRows}</div>
+    </section>
+
+    <section class="card tape" style="--tape:rgba(147,184,214,.5)">
+      <h2 class="sec-title" style="--hl:rgba(147,184,214,.45)">Профиль для расчёта калорий</h2>
+      <p class="hint">Нужен для расхода и дефицита на странице дня. Хранится только на телефоне.</p>
+      <div class="norms">
+        <label class="norm-row"><span>Рост</span><input inputmode="decimal" value="${S.profile.height || ''}" data-input="prof" data-k="height" placeholder="165"><em>см</em></label>
+        <label class="norm-row"><span>Год рождения</span><input inputmode="numeric" value="${S.profile.birthYear || ''}" data-input="prof" data-k="birthYear" placeholder="1995"><em></em></label>
+        <label class="norm-row"><span>Контрольное взвешивание<br><small class="muted">какого числа каждый месяц</small></span><input inputmode="numeric" value="${S.profile.ctrlDay || 1}" data-input="prof" data-k="ctrlDay" placeholder="1"><em>число</em></label>
+        <div class="norm-row switch-row">
+          <span>Поправка на фазу цикла<br><small class="muted">+~8% к обмену во второй половине цикла, по отмеченным капелькам</small></span>
+          <button class="switch ${S.profile.cycleAdj ? 'on' : ''}" data-act="cycleAdj" aria-label="Поправка на цикл"><i></i></button>
+        </div>
+        ${S.profile.cycleAdj ? `<label class="norm-row"><span>Длина цикла<br><small class="muted">пока мало отметок; потом считается сама</small></span><input inputmode="numeric" value="${S.profile.cycleLen || 28}" data-input="prof" data-k="cycleLen" placeholder="28"><em>дней</em></label>` : ''}
+      </div>
+      <p class="hint" style="margin-top:8px">Вес вписывается на странице дня. Расход = обмен в покое (формула Миффлина — Сан-Жеора) × ${String(NEAT).replace('.', ',')} + активные калории${S.profile.cycleAdj ? ' + поправка на цикл' : ''}.</p>
     </section>
 
     <section class="card tape" style="--tape:rgba(233,163,168,.55)">
@@ -813,6 +1021,8 @@ const actions = {
   },
   foodEdit(el) { ui.editFood = el.dataset.id; pendingFocus = '.food-edit .fa-name'; render(); },
   foodEditCancel() { ui.editFood = null; render(); },
+  cycleAdj() { S.profile.cycleAdj = !S.profile.cycleAdj; save(); render(); },
+  wPoint(el) { ui.wPoint = ui.wPoint === el.dataset.k ? null : el.dataset.k; render(); },
   unpin(el) {
     const dISO = el.dataset.d; const id = el.dataset.id;
     const f = S.fixed.find((x) => x.id === id) || (fixedFor(dISO).find((x) => x.id === id));
@@ -940,6 +1150,24 @@ document.addEventListener('change', (e) => {
     t.title = v; save();
   } else if (kind === 'norm') {
     S.norms[el.dataset.k] = num(el.value); save();
+  } else if (kind === 'weight' || kind === 'active') {
+    const d = ensureDay(el.dataset.d);
+    const v = num(el.value);
+    if (kind === 'weight') {
+      if (v > 0 && (v < 25 || v > 300)) { toast('Проверьте вес — похоже на опечатку'); return; }
+      d.weight = v || null;
+      d.weightCtrl = !!(v && el.dataset.ctrl);
+      if (v && el.dataset.ctrl) toast('Контрольный вес записан ⚖️');
+    } else d.active = v || null;
+    save(); render();
+  } else if (kind === 'prof') {
+    const k = el.dataset.k;
+    const v = num(el.value);
+    if (k === 'ctrlDay') S.profile.ctrlDay = Math.min(28, Math.max(1, Math.round(v) || 1));
+    else if (k === 'birthYear') S.profile.birthYear = v ? Math.round(v) : null;
+    else if (k === 'cycleLen') S.profile.cycleLen = Math.min(40, Math.max(21, Math.round(v) || 28));
+    else S.profile[k] = v || null;
+    save(); render();
   } else if (kind === 'fTitle') {
     const f = S.fixed.find((x) => x.id === id); if (!f) return;
     f.title = el.value.trim(); syncTodayFixed(); save();
@@ -989,6 +1217,8 @@ async function exportCSV() {
     const wd = WD_FULL[wdIndex(parseISO(dISO))];
     const mood = moodOf(d.mood);
     if (mood) rows.push([dISO, wd, 'Настроение', mood.t, '', '']);
+    if (d.weight) rows.push([dISO, wd, d.weightCtrl ? 'Вес (контрольный)' : 'Вес', `${fmtNum(num(d.weight))} кг`, '', '']);
+    if (d.active) rows.push([dISO, wd, 'Активные калории', `${num(d.active)} ккал`, '', '']);
     if (d.period) rows.push([dISO, wd, 'Месячные', ['', 'слабые', 'средние', 'сильные'][d.period], '', '']);
     (d.food || []).forEach((x) => rows.push([dISO, wd, 'Питание',
       `${x.name || ''}: ${num(x.kcal)} ккал, Б ${num(x.p)}, Ж ${num(x.f)}, У ${num(x.c)}, Кл ${num(x.fib)}`, '', '']));
