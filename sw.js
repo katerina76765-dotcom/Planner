@@ -1,6 +1,6 @@
 // Офлайн-режим: код приложения кэшируется на телефоне.
 // Ваши записи хранятся отдельно (в памяти браузера) и сюда не попадают.
-const VERSION = 'planner-release-v1';
+const VERSION = 'planner-release-v1.1';
 const SHELL = [
   './',
   './index.html',
@@ -43,9 +43,10 @@ self.addEventListener('fetch', (e) => {
 
   if (url.origin !== location.origin) return;
 
-  // Свои файлы: сначала сеть (чтобы обновления приходили), без сети — кэш
+  // Свои файлы: сначала сеть (чтобы обновления приходили), без сети — кэш.
+  // cache: 'no-cache' — не брать устаревшую копию из кэша браузера (GitHub Pages держит её до 10 минут)
   e.respondWith(
-    fetch(req)
+    fetch(req, { cache: 'no-cache' })
       .then((res) => {
         const copy = res.clone();
         caches.open(VERSION).then((c) => c.put(req, copy));
