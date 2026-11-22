@@ -22,6 +22,32 @@ const MOODS = [
 ];
 const moodOf = (v) => MOODS.find((m) => m.v === v);
 
+const APP_VERSION = 'v1';
+// Питание: поля, подписи и нормы по умолчанию (меняются в настройках)
+const NUTR = [
+  { k: 'kcal', t: 'Калории', s: 'ккал', short: 'Ккал' },
+  { k: 'p', t: 'Белки', s: 'г', short: 'Б' },
+  { k: 'f', t: 'Жиры', s: 'г', short: 'Ж' },
+  { k: 'c', t: 'Углеводы', s: 'г', short: 'У' },
+  { k: 'fib', t: 'Клетчатка', s: 'г', short: 'Кл' }
+];
+const NORMS_DEFAULT = { kcal: 1800, p: 90, f: 60, c: 200, fib: 25 };
+const num = (v) => { const n = parseFloat(String(v ?? '').replace(',', '.')); return Number.isFinite(n) && n >= 0 ? Math.round(n * 10) / 10 : 0; };
+const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
+// дни, в которые повторяется закреплённое дело (пусто = каждый день)
+const fixedDays = (f) => (Array.isArray(f.days) && f.days.length ? f.days : ALL_DAYS);
+const daysLabel = (f) => {
+  const d = fixedDays(f);
+  if (d.length === 7) return 'каждый день';
+  if (d.length === 5 && d.every((x) => x < 5)) return 'по будням';
+  if (d.length === 2 && d.includes(5) && d.includes(6)) return 'по выходным';
+  return d.slice().sort().map((x) => WD_SHORT[x].toLowerCase()).join(', ');
+};
+const dropSvg = (cls = '') => `<svg class="ds ${cls}" viewBox="0 0 24 24" aria-hidden="true"><use href="#drop"/></svg>`;
+const starSvg = (cls = '') => `<svg class="ss ${cls}" viewBox="0 0 24 24" aria-hidden="true"><use href="#star"/></svg>`;
+const drops = (n, cls = '') => n ? `<span class="drops ${cls}">${dropSvg().repeat(n)}</span>` : '';
+const ui = { foodOpen: null };
+
 /* ---------- сезоны: картинки, фразы, акценты ---------- */
 const SEASONS = {
   winter: {
@@ -90,6 +116,7 @@ function defaults() {
       { id: uid(), icon: '📖', title: 'Читать', color: HABIT_COLORS[4] },
       { id: uid(), icon: '💛', title: 'Благодарность', color: HABIT_COLORS[1] }
     ],
+    norms: { ...NORMS_DEFAULT },
     days: {},
     weeks: {},
     lastBackup: null
@@ -103,13 +130,24 @@ function migrate(s) {
   for (const d of Object.values(days)) {
     d.tasks ||= []; d.habits ||= {}; d.note ??= ''; d.fixedDone ||= {};
     delete d.routine; delete d.routineDone;
+    d.period = Math.max(0, Math.min(3, Number(d.period) || 0));
+    if (!Array.isArray(d.food)) d.food = [];
+  }
+  // v1: заметки недели стали списком (каждую можно отметить ★ главной)
+  const weeks = s.weeks && typeof s.weeks === 'object' ? s.weeks : {};
+  for (const w of Object.values(weeks)) {
+    if (!Array.isArray(w.notes)) {
+      w.notes = (w.note && w.note.trim()) ? [{ id: uid(), text: w.note.trim(), main: false }] : [];
+    }
+    delete w.note;
   }
   return {
-    version: 3,
+    version: 4,
     fixed: Array.isArray(s.fixed) ? s.fixed : base.fixed,
     habits: Array.isArray(s.habits) ? s.habits : base.habits,
+    norms: { ...NORMS_DEFAULT, ...(s.norms || {}) },
     days,
-    weeks: s.weeks && typeof s.weeks === 'object' ? s.weeks : {},
+    weeks,
     lastBackup: s.lastBackup || null
   };
 }
@@ -136,20 +174,30 @@ function save() {
 function ensureDay(dISO) {
   const today = todayISO();
   let d = S.days[dISO];
-  if (!d) d = S.days[dISO] = { tasks: [], habits: {}, note: '', fixedDone: {} };
-  d.fixedDone ||= {};
-  if (!d.fixed && dISO <= today) d.fixed = dISO === today ? clone(S.fixed) : [];
+  if (!d) d = S.days[dISO] = { tasks: [], habits: {}, note: '', fixedDone: {}, period: 0, food: [] };
+  d.fixedDone ||= {}; d.food ||= [];
+  if (!d.fixed && dISO <= today) d.fixed = dISO === today ? fixedTemplateFor(dISO) : [];
   return d;
 }
 const getDay = (dISO) => S.days[dISO];
+// закреплённые дела, которые выпадают на этот день недели
+const fixedTemplateFor = (dISO) => clone(S.fixed.filter((f) => fixedDays(f).includes(wdIndex(parseISO(dISO)))));
 function fixedFor(dISO) {
   const d = S.days[dISO];
   if (d && d.fixed) return d.fixed;
-  return dISO >= todayISO() ? S.fixed : [];
+  return dISO >= todayISO() ? fixedTemplateFor(dISO) : [];
 }
 function syncTodayFixed() {
-  const d = S.days[todayISO()];
-  if (d) d.fixed = clone(S.fixed);
+  const t = todayISO();
+  const d = S.days[t];
+  if (d) d.fixed = fixedTemplateFor(t);
+}
+function foodTotals(dISO) {
+  const d = getDay(dISO);
+  const tot = { kcal: 0, p: 0, f: 0, c: 0, fib: 0 };
+  if (d && d.food) d.food.forEach((x) => NUTR.forEach((n) => { tot[n.k] += num(x[n.k]); }));
+  NUTR.forEach((n) => { tot[n.k] = Math.round(tot[n.k] * 10) / 10; });
+  return tot;
 }
 
 function dayStats(dISO) {
@@ -166,7 +214,7 @@ const hasActivity = (dISO) => {
   const d = getDay(dISO);
   if (!d) return false;
   return d.tasks.length > 0 || Object.values(d.fixedDone || {}).some(Boolean) || Object.values(d.habits).some(Boolean)
-    || !!(d.note && d.note.trim()) || !!d.mood;
+    || !!(d.note && d.note.trim()) || !!d.mood || !!d.period || (d.food && d.food.length > 0);
 };
 
 /* ---------- маршрутизация ---------- */
@@ -189,6 +237,7 @@ function render() {
   else if (view === 'settings') el.innerHTML = viewSettings();
   else { el.innerHTML = viewWeek(today); tab = 'week'; }
   document.body.dataset.season = seasonKey(sDate);
+  document.querySelectorAll('.wn-in').forEach((t) => autosize(t));
   document.querySelectorAll('.tabbar a').forEach((a) => a.classList.toggle('active', a.dataset.tab === tab));
   if (pendingFocus) { const f = $(pendingFocus); if (f) f.focus({ preventScroll: true }); pendingFocus = null; }
 }
@@ -243,6 +292,7 @@ function viewWeek(anchorISO) {
         <div class="dc-head">
           <span class="badge">${WD_SHORT[i]}</span>
           <span class="dc-name">${WD_FULL[i]}</span>
+          ${rec && rec.period ? drops(1, 'dc-drop') : ''}
           ${mood ? `<span class="dc-mood" title="${mood.t}">${mood.e}</span>` : ''}
           <span class="dc-heart ${allDone ? 'on' : ''}">${heartSvg()}</span>
         </div>
@@ -271,10 +321,16 @@ function viewWeek(anchorISO) {
   const moodCells = [...Array(7)].map((_, i) => {
     const rec = getDay(iso(addDays(mon, i)));
     const m = rec && moodOf(rec.mood);
-    return `<div class="wm-cell"><span class="wm-e">${m ? m.e : '<i></i>'}</span><span class="wm-d">${WD_SHORT[i]}</span></div>`;
+    return `<div class="wm-cell"><span class="wm-e">${m ? m.e : '<i></i>'}</span>${drops(rec && rec.period, 'wm-drops')}<span class="wm-d">${WD_SHORT[i]}</span></div>`;
   }).join('');
 
-  const wnote = (S.weeks[monISO] && S.weeks[monISO].note) || '';
+  const wnotes = (S.weeks[monISO] && S.weeks[monISO].notes) || [];
+  const notesHtml = wnotes.map((n) => `
+      <li class="wnote ${n.main ? 'main' : ''}">
+        <textarea class="wn-in" rows="1" data-input="wnText" data-w="${monISO}" data-id="${n.id}" aria-label="Заметка">${esc(n.text)}</textarea>
+        <button class="star-btn ${n.main ? 'on' : ''}" data-act="wnMain" data-w="${monISO}" data-id="${n.id}" aria-label="Главная заметка">${starSvg()}</button>
+        <button class="del" data-act="wnDel" data-w="${monISO}" data-id="${n.id}" aria-label="Удалить">×</button>
+      </li>`).join('');
 
   return `
     <header class="hero week-hero">
@@ -310,7 +366,12 @@ function viewWeek(anchorISO) {
 
     <section class="card tape notes-card" style="--tape:rgba(167,185,143,.55)">
       <h2 class="sec-title" style="--hl:rgba(167,185,143,.5)">Заметки недели ${heartSvg('inline')}</h2>
-      <textarea class="lined" rows="4" data-input="weekNote" data-d="${monISO}" placeholder="Фокус недели, мысли, идеи…">${esc(wnote)}</textarea>
+      <p class="hint">${starSvg('inline')} — главная заметка: попадёт в итоги месяца в календаре</p>
+      <ul class="wnotes">${notesHtml}</ul>
+      <form class="add" data-form="addWeekNote" data-w="${monISO}">
+        <input name="t" placeholder="Фокус недели, мысль, идея…" autocomplete="off" enterkeyhint="done" id="addNoteInput">
+        <button class="btn sage" type="submit" aria-label="Добавить">+</button>
+      </form>
       ${art(season.note, 'card-art')}
     </section>
     ${garden(season, 'Действуй<br>сегодня')}`;
@@ -350,15 +411,45 @@ function viewDay(dISO) {
 
   const fixedHtml = fixedFor(dISO).map((f) => {
     const done = !!(rec && rec.fixedDone[f.id]);
+    const tpl = S.fixed.find((x) => x.id === f.id);
+    const lbl = daysLabel(tpl || f);
+    const editing = !isPast && tpl && ui.editDays === f.id;
     return `
       <li class="task fixed ${done ? 'done' : ''}">
-        <span class="t-txt">${esc(f.title)}</span>
+        <span class="t-txt">${esc(f.title)}
+          ${isPast || !tpl ? `<small class="days-lbl static">${lbl}</small>`
+            : `<button class="days-lbl" data-act="editDays" data-id="${f.id}">${lbl} ▾</button>`}
+        </span>
         ${isPast ? `<span class="pin-btn on static">${pinSvg()}</span>`
           : `<button class="pin-btn on" data-act="unpin" data-d="${dISO}" data-id="${f.id}" aria-label="Открепить">${pinSvg()}</button>`}
         <button class="heart-btn ${f.fav ? 'on' : ''}" data-act="fixFav" data-d="${dISO}" data-id="${f.id}" aria-label="Показать в неделе">${heartSvg()}</button>
         <button class="box" data-act="toggleFixed" data-d="${dISO}" data-id="${f.id}" aria-label="Выполнено"></button>
-      </li>`;
+      </li>
+      ${editing ? `<li class="days-editor">${dayPicker(tpl)}</li>` : ''}`;
   }).join('');
+
+  // питание
+  const food = rec ? rec.food || [] : [];
+  const tot = foodTotals(dISO);
+  const bars = NUTR.map((n) => {
+    const v = tot[n.k], norm = num(S.norms[n.k]);
+    const pct = norm ? Math.min(100, (v / norm) * 100) : 0;
+    const state = !v ? '' : norm && v > norm * 1.1 ? 'over' : norm && v >= norm * 0.9 ? 'ok' : 'under';
+    return `<div class="nbar ${state} ${n.k === 'kcal' ? 'big' : ''}">
+        <span class="nl">${n.t}</span><span class="nv"><b>${v}</b> / ${norm || '—'} ${n.s}</span>
+        <i><em style="width:${pct}%"></em></i>
+      </div>`;
+  }).join('');
+  const foodRows = food.map((x) => `
+      <li class="food-row">
+        <div class="fr-main"><span class="fr-name">${esc(x.name || 'Без названия')}</span>
+          <span class="fr-nums">${num(x.kcal)} ккал · Б ${num(x.p)} · Ж ${num(x.f)} · У ${num(x.c)} · Кл ${num(x.fib)}</span></div>
+        <button class="del" data-act="foodDel" data-d="${dISO}" data-id="${x.id}" aria-label="Удалить">×</button>
+      </li>`).join('');
+  const foodOpen = ui.foodOpen ?? food.length > 0;
+
+  const periodHtml = [1, 2, 3].map((k) => `
+      <button class="drop-btn ${rec && rec.period >= k ? 'on' : ''}" data-act="period" data-d="${dISO}" data-v="${k}" aria-label="${k} из 3">${dropSvg()}</button>`).join('');
 
   const tasks = rec ? rec.tasks : [];
   const tasksHtml = tasks.map((t) => `
@@ -410,14 +501,19 @@ function viewDay(dISO) {
     </div>
 
     <section class="card tape" style="--tape:rgba(147,184,214,.5)">
-      <h2 class="sec-title" style="--hl:rgba(147,184,214,.45)">Настроение дня</h2>
+      <h2 class="sec-title" style="--hl:rgba(147,184,214,.45)">Самочувствие</h2>
       <div class="moods">${moodHtml}</div>
+      <div class="period-row">
+        <span class="pr-label">Месячные</span>
+        <div class="drop-btns">${periodHtml}</div>
+        <span class="pr-hint">${rec && rec.period ? ['', 'слабые', 'средние', 'сильные'][rec.period] : 'нажмите, если нужно'}</span>
+      </div>
     </section>
 
     <section class="card tape paper-card" style="--tape:${color}99">
       <h2 class="sec-title" style="--hl:rgba(232,196,106,.55)">Дела на сегодня ${heartSvg('inline')}</h2>
-      <p class="hint legend-line"><span>${pinSvg('inline')} каждый день</span><span>${heartSvg('inline')} в неделю</span><span><i class="mini-box"></i> выполнено</span></p>
-      ${fixedHtml ? `<div class="sub-label">${pinSvg('inline')} Каждый день</div><ul class="list tasks fixed-list" style="--c:${color}">${fixedHtml}</ul>` : ''}
+      <p class="hint legend-line"><span>${pinSvg('inline')} повторять</span><span>${heartSvg('inline')} в неделю</span><span><i class="mini-box"></i> выполнено</span></p>
+      ${fixedHtml ? `<div class="sub-label">${pinSvg('inline')} Повторяющиеся</div><ul class="list tasks fixed-list" style="--c:${color}">${fixedHtml}</ul>` : ''}
       ${fixedHtml && tasksHtml ? '<div class="sub-label">На этот день</div>' : ''}
       <ul class="list tasks" style="--c:${color}">${tasksHtml}</ul>
       <form class="add" data-form="addTask" data-d="${dISO}">
@@ -430,6 +526,24 @@ function viewDay(dISO) {
       <h2 class="sec-title" style="--hl:rgba(167,185,143,.5)">Привычки</h2>
       <div class="habit-chips">${habitsHtml || '<span class="empty">Добавьте привычки в настройках</span>'}</div>
     </section>
+
+    <details class="card tape food-card" style="--tape:rgba(235,165,116,.5)" data-details="food" ${foodOpen ? 'open' : ''}>
+      <summary>
+        <h2 class="sec-title" style="--hl:rgba(235,165,116,.45)">Питание</h2>
+        <span class="food-sum">${tot.kcal} / ${num(S.norms.kcal) || '—'} ккал</span>
+        <span class="chev">▾</span>
+      </summary>
+      <div class="nbars">${bars}</div>
+      ${foodRows ? `<ul class="food-list">${foodRows}</ul>` : '<p class="hint" style="margin-top:8px">Добавляйте приёмы пищи — итог посчитается сам.</p>'}
+      <form class="food-add" data-form="addFood" data-d="${dISO}">
+        <input name="name" class="fa-name" placeholder="Что съели (завтрак, перекус…)" autocomplete="off">
+        <div class="fa-nums">
+          ${NUTR.map((n) => `<label><span>${n.short}</span><input name="${n.k}" inputmode="decimal" autocomplete="off" placeholder="0"></label>`).join('')}
+          <button class="btn" type="submit" aria-label="Добавить">+</button>
+        </div>
+      </form>
+      <a class="link" href="#/settings" style="display:inline-block;margin-top:8px">Изменить дневную норму →</a>
+    </details>
 
     ${undone ? `<div style="margin-top:14px"><button class="btn soft block" data-act="carry" data-d="${dISO}">Перенести невыполненное (${undone}) на ${dISO === today ? 'завтра' : 'следующий день'} →</button></div>` : ''}
     ${garden(season, 'Маленькие шаги —<br>большие перемены')}
@@ -480,7 +594,7 @@ function viewCalendar(ym) {
 
   let cells = WD_SHORT.map((w) => `<div class="wd">${w}</div>`).join('');
   for (let k = 0; k < wdIndex(first); k++) cells += '<div class="cell blank"></div>';
-  let active = 0, tasksDone = 0, sumPct = 0, withTasks = 0, notes = 0;
+  let active = 0, tasksDone = 0, sumPct = 0, withTasks = 0, notes = 0, periodDays = 0;
   const moodCount = {};
   for (let n = 1; n <= daysIn; n++) {
     const dISO = `${ym}-${pad(n)}`;
@@ -500,10 +614,27 @@ function viewCalendar(ym) {
     if (mood) moodCount[mood.v] = (moodCount[mood.v] || 0) + 1;
     cells += `<a class="cell ${dISO === today ? 'today' : ''} ${dISO > today ? 'future' : ''}" href="#/day/${dISO}" style="${style}">
         ${mood ? `<span class="cmood">${mood.e}</span>` : ''}
-        ${n}${act && st.total ? `<span class="pct">${st.done}/${st.total}</span>` : ''}${hasNote ? '<span class="ndot"></span>' : ''}</a>`;
+        ${n}${act && st.total ? `<span class="pct">${st.done}/${st.total}</span>` : ''}${hasNote ? '<span class="ndot"></span>' : ''}
+        ${drops(rec && rec.period, 'cdrops')}</a>`;
+    if (rec && rec.period) periodDays++;
   }
   const topMood = Object.entries(moodCount).sort((a, b) => b[1] - a[1])[0];
   const top = topMood ? moodOf(Number(topMood[0])) : null;
+
+  // главные заметки недель этого месяца (неделя относится к месяцу, в котором её четверг)
+  const mainBlocks = [];
+  for (let mon = mondayOf(first); mon <= new Date(y, m - 1, daysIn); mon = addDays(mon, 7)) {
+    if (addDays(mon, 3).getMonth() !== m - 1) continue;
+    const w = S.weeks[iso(mon)];
+    const mains = w && w.notes ? w.notes.filter((x) => x.main && x.text.trim()) : [];
+    if (!mains.length) continue;
+    const sun = addDays(mon, 6);
+    mainBlocks.push(`
+      <div class="mn-week">
+        <a class="mn-range" href="#/week/${iso(mon)}">${mon.getDate()} ${MONTHS_GEN[mon.getMonth()]} – ${sun.getDate()} ${MONTHS_GEN[sun.getMonth()]} →</a>
+        <ul>${mains.map((x) => `<li>${starSvg('inline')} ${esc(x.text).replace(/\n/g, '<br>')}</li>`).join('')}</ul>
+      </div>`);
+  }
 
   return `
     <header class="cal-head hero">
@@ -518,7 +649,11 @@ function viewCalendar(ym) {
     </header>
     <section class="card tape" style="--tape:rgba(232,196,106,.55)">
       <div class="cal-grid">${cells}</div>
-      <div class="legend">мало <i style="background:${cellColor(0)}"></i><i style="background:${cellColor(50)}"></i><i style="background:${cellColor(100)}"></i> всё сделано · <span style="color:var(--terracotta)">●</span> заметка</div>
+      <div class="legend">мало <i style="background:${cellColor(0)}"></i><i style="background:${cellColor(50)}"></i><i style="background:${cellColor(100)}"></i> всё сделано · <span style="color:var(--terracotta)">●</span> заметка · ${dropSvg('inline')} месячные</div>
+    </section>
+    <section class="card tape notes-card" style="--tape:rgba(167,185,143,.55)">
+      <h2 class="sec-title" style="--hl:rgba(167,185,143,.5)">Главное за месяц ${starSvg('inline')}</h2>
+      ${mainBlocks.join('') || `<p class="hint" style="margin:4px 0 0">Отмечайте ${starSvg('inline')} главные заметки на странице недели — они соберутся здесь.</p>`}
     </section>
     <section class="card">
       <h2 class="sec-title" style="--hl:rgba(232,196,106,.55)">Итоги месяца ${heartSvg('inline')}</h2>
@@ -529,6 +664,7 @@ function viewCalendar(ym) {
       </div>
       ${top ? `<p class="muted" style="text-align:center;margin:12px 0 0">Чаще всего настроение: <span style="font-size:18px">${top.e}</span> ${top.t.toLowerCase()}</p>` : ''}
       ${notes ? `<p class="muted" style="text-align:center;margin:6px 0 0">Заметок за месяц: ${notes}</p>` : ''}
+      ${periodDays ? `<p class="muted" style="text-align:center;margin:6px 0 0">${dropSvg('inline')} Дней месячных: ${periodDays}</p>` : ''}
     </section>
     ${garden(season, 'Каждый день —<br>новая страница')}`;
 }
@@ -537,12 +673,16 @@ function viewCalendar(ym) {
 function viewSettings() {
   const season = seasonOf(new Date());
   const fRows = S.fixed.map((f) => `
-      <div class="edit-row">
+      <div class="edit-row" style="flex-wrap:wrap">
         ${pinSvg('inline row-pin')}
-        <input class="txt" value="${esc(f.title)}" data-input="fTitle" data-id="${f.id}" placeholder="Дело на каждый день">
+        <input class="txt" value="${esc(f.title)}" data-input="fTitle" data-id="${f.id}" placeholder="Повторяющееся дело">
         <button class="heart-btn ${f.fav ? 'on' : ''}" data-act="fixFav" data-id="${f.id}" aria-label="В неделю">${heartSvg()}</button>
         <button class="del" data-act="fDel" data-id="${f.id}" aria-label="Удалить">×</button>
+        <div class="row-days">${dayPicker(f)}</div>
       </div>`).join('');
+  const normRows = NUTR.map((n) => `
+      <label class="norm-row"><span>${n.t}</span>
+        <input inputmode="decimal" value="${num(S.norms[n.k]) || ''}" data-input="norm" data-k="${n.k}" placeholder="0"><em>${n.s}</em></label>`).join('');
   const hRows = S.habits.map((h) => `
       <div class="edit-row" style="flex-wrap:wrap">
         <input class="emoji" value="${esc(h.icon)}" data-input="hIcon" data-id="${h.id}" aria-label="Значок">
@@ -562,10 +702,16 @@ function viewSettings() {
     </header>
 
     <section class="card tape" style="--tape:rgba(232,196,106,.55)">
-      <h2 class="sec-title">Дела на каждый день</h2>
-      <p class="hint">Эти дела сами появляются в каждом дне. Закрепить можно и прямо в плане дня — значком ${pinSvg('inline')}. Прошлые дни в архиве не изменятся.</p>
+      <h2 class="sec-title">Повторяющиеся дела</h2>
+      <p class="hint">Сами появляются в выбранные дни недели (например, французский по СР и ПТ). Закрепить можно и прямо в плане дня — значком ${pinSvg('inline')}. Прошлые дни в архиве не изменятся.</p>
       ${fRows || '<div class="empty">Пока пусто</div>'}
       <div class="settings-actions"><button class="btn soft" data-act="fAdd">+ Добавить дело</button></div>
+    </section>
+
+    <section class="card tape" style="--tape:rgba(235,165,116,.5)">
+      <h2 class="sec-title" style="--hl:rgba(235,165,116,.45)">Дневная норма питания</h2>
+      <p class="hint">С ней сравниваются записи в разделе «Питание» на странице дня.</p>
+      <div class="norms">${normRows}</div>
     </section>
 
     <section class="card tape" style="--tape:rgba(233,163,168,.55)">
@@ -588,6 +734,7 @@ function viewSettings() {
         <p>Копия — это файл. Сохраните его в «Файлы», на компьютер, в Telegram «Избранное» или на почту. Лучше в два разных места.</p>
       </div>
     </section>
+    <p class="hint center" style="margin-top:16px">Планер · версия ${APP_VERSION}</p>
     ${garden(season, 'Всё<br>получится')}`;
 }
 
@@ -620,8 +767,36 @@ const actions = {
       d.tasks = d.tasks.filter((x) => x.id !== t.id);
       if (t.done) d.fixedDone[nf.id] = true;
     }
+    syncTodayFixed(); ui.editDays = nf.id; save(); render();
+    toast('Закреплено 📌 Выберите дни недели под делом');
+  },
+  editDays(el) { ui.editDays = ui.editDays === el.dataset.id ? null : el.dataset.id; render(); },
+  fixDay(el) {
+    const f = S.fixed.find((x) => x.id === el.dataset.id); if (!f) return;
+    const wd = Number(el.dataset.wd);
+    let days = fixedDays(f).slice();
+    days = days.includes(wd) ? days.filter((x) => x !== wd) : [...days, wd].sort();
+    if (!days.length) { toast('Нужен хотя бы один день'); return; }
+    f.days = days;
     syncTodayFixed(); save(); render();
-    toast('Закреплено — будет каждый день 📌');
+  },
+  period(el) {
+    const d = ensureDay(el.dataset.d); const v = Number(el.dataset.v);
+    d.period = d.period === v ? v - 1 : v; save(); render();
+  },
+  wnMain(el) {
+    const w = S.weeks[el.dataset.w]; const n = w && w.notes.find((x) => x.id === el.dataset.id); if (!n) return;
+    n.main = !n.main; save(); render(); toast(n.main ? 'Главная — появится в итогах месяца ★' : 'Больше не главная');
+  },
+  wnDel(el) {
+    const w = S.weeks[el.dataset.w]; if (!w) return;
+    const n = w.notes.find((x) => x.id === el.dataset.id);
+    if (n && n.text.trim() && !confirm('Удалить заметку?')) return;
+    w.notes = w.notes.filter((x) => x.id !== el.dataset.id); save(); render();
+  },
+  foodDel(el) {
+    const d = getDay(el.dataset.d); if (!d) return;
+    d.food = d.food.filter((x) => x.id !== el.dataset.id); save(); render();
   },
   unpin(el) {
     const dISO = el.dataset.d; const id = el.dataset.id;
@@ -661,7 +836,7 @@ const actions = {
   fAdd() { S.fixed.push({ id: uid(), title: '', fav: false }); syncTodayFixed(); save(); pendingFocus = '.edit-row input.txt[value=""]'; render(); },
   fDel(el) {
     const f = S.fixed.find((x) => x.id === el.dataset.id);
-    if (f && f.title && !confirm(`Убрать «${f.title}» из ежедневных дел?`)) return;
+    if (f && f.title && !confirm(`Убрать «${f.title}» из повторяющихся дел?`)) return;
     S.fixed = S.fixed.filter((x) => x.id !== el.dataset.id); syncTodayFixed(); save(); render();
   },
   hAdd() { S.habits.push({ id: uid(), icon: '🌸', title: '', color: HABIT_COLORS[S.habits.length % HABIT_COLORS.length] }); save(); pendingFocus = '.edit-row input.txt[value=""]'; render(); },
@@ -679,25 +854,55 @@ document.addEventListener('click', (e) => {
   if (g && !e.target.closest('input,textarea')) go(g.dataset.go);
 });
 
+function dayPicker(f) {
+  const on = fixedDays(f);
+  return `<div class="day-picker">${WD_SHORT.map((w, i) =>
+    `<button class="dp ${on.includes(i) ? 'on' : ''}" data-act="fixDay" data-id="${f.id}" data-wd="${i}">${w}</button>`).join('')}</div>`;
+}
+
 document.addEventListener('submit', (e) => {
-  const f = e.target.closest('[data-form="addTask"]');
+  const f = e.target.closest('form[data-form]');
   if (!f) return;
   e.preventDefault();
-  const title = f.t.value.trim();
-  if (!title) return;
-  ensureDay(f.dataset.d).tasks.push({ id: uid(), title, done: false, fav: false });
-  save(); pendingFocus = '#addInput'; render();
+  const kind = f.dataset.form;
+  if (kind === 'addTask') {
+    const title = f.t.value.trim(); if (!title) return;
+    ensureDay(f.dataset.d).tasks.push({ id: uid(), title, done: false, fav: false });
+    save(); pendingFocus = '#addInput'; render();
+  } else if (kind === 'addWeekNote') {
+    const text = f.t.value.trim(); if (!text) return;
+    const w = (S.weeks[f.dataset.w] ||= { notes: [] }); w.notes ||= [];
+    w.notes.push({ id: uid(), text, main: false });
+    save(); pendingFocus = '#addNoteInput'; render();
+  } else if (kind === 'addFood') {
+    const entry = { id: uid(), name: f.name.value.trim() };
+    NUTR.forEach((n) => { entry[n.k] = num(f[n.k].value); });
+    if (!entry.name && NUTR.every((n) => !entry[n.k])) { toast('Введите название или цифры'); return; }
+    ensureDay(f.dataset.d).food.push(entry);
+    ui.foodOpen = true; save(); render();
+  }
 });
+
+// раскрыт/свёрнут блок «Питание»
+document.addEventListener('toggle', (e) => {
+  if (e.target.dataset && e.target.dataset.details === 'food') ui.foodOpen = e.target.open;
+}, true);
+
+const autosize = (el) => { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; };
 
 let noteTimer = null;
 document.addEventListener('input', (e) => {
   const el = e.target;
   const kind = el.dataset && el.dataset.input;
-  if (kind !== 'dayNote' && kind !== 'weekNote') return;
+  if (kind === 'wnText') autosize(el);
+  if (kind !== 'dayNote' && kind !== 'wnText') return;
   clearTimeout(noteTimer);
   noteTimer = setTimeout(() => {
     if (kind === 'dayNote') ensureDay(el.dataset.d).note = el.value;
-    else (S.weeks[el.dataset.d] ||= {}).note = el.value;
+    else {
+      const w = S.weeks[el.dataset.w]; const n = w && w.notes.find((x) => x.id === el.dataset.id);
+      if (n) n.text = el.value;
+    }
     save();
     const m = $('#savedMark'); if (m) { m.classList.add('show'); setTimeout(() => m.classList.remove('show'), 1200); }
   }, 350);
@@ -713,6 +918,8 @@ document.addEventListener('change', (e) => {
     const v = el.value.trim();
     if (!v) { const d = getDay(el.dataset.d); d.tasks = d.tasks.filter((x) => x.id !== id); save(); render(); return; }
     t.title = v; save();
+  } else if (kind === 'norm') {
+    S.norms[el.dataset.k] = num(el.value); save();
   } else if (kind === 'fTitle') {
     const f = S.fixed.find((x) => x.id === id); if (!f) return;
     f.title = el.value.trim(); syncTodayFixed(); save();
@@ -762,10 +969,18 @@ async function exportCSV() {
     const wd = WD_FULL[wdIndex(parseISO(dISO))];
     const mood = moodOf(d.mood);
     if (mood) rows.push([dISO, wd, 'Настроение', mood.t, '', '']);
-    fixedFor(dISO).forEach((f) => rows.push([dISO, wd, 'Каждый день', f.title, d.fixedDone[f.id] ? 'да' : 'нет', f.fav ? 'да' : '']));
+    if (d.period) rows.push([dISO, wd, 'Месячные', ['', 'слабые', 'средние', 'сильные'][d.period], '', '']);
+    (d.food || []).forEach((x) => rows.push([dISO, wd, 'Питание',
+      `${x.name || ''}: ${num(x.kcal)} ккал, Б ${num(x.p)}, Ж ${num(x.f)}, У ${num(x.c)}, Кл ${num(x.fib)}`, '', '']));
+    fixedFor(dISO).forEach((f) => rows.push([dISO, wd, 'Повторяющееся', f.title, d.fixedDone[f.id] ? 'да' : 'нет', f.fav ? 'да' : '']));
     d.tasks.forEach((t) => rows.push([dISO, wd, t.moved ? 'Дело (перенесено)' : 'Дело', t.title, t.done ? 'да' : 'нет', t.fav ? 'да' : '']));
     S.habits.forEach((h) => { if (d.habits[h.id]) rows.push([dISO, wd, 'Привычка', h.title, 'да', '']); });
     if (d.note && d.note.trim()) rows.push([dISO, wd, 'Заметка', d.note.trim(), '', '']);
+  }
+  for (const monISO of Object.keys(S.weeks).sort()) {
+    (S.weeks[monISO].notes || []).forEach((n) => {
+      if (n.text.trim()) rows.push([monISO, 'неделя', n.main ? 'Заметка недели (главная)' : 'Заметка недели', n.text.trim(), '', '']);
+    });
   }
   const csv = '﻿' + rows.map((r) => r.map(csvCell).join(';')).join('\n');
   await shareOrDownload(new File([csv], `planner-${todayISO()}.csv`, { type: 'text/csv' }));
