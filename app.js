@@ -22,7 +22,7 @@ const MOODS = [
 ];
 const moodOf = (v) => MOODS.find((m) => m.v === v);
 
-const APP_VERSION = 'v2';
+const APP_VERSION = 'v3';
 const PROFILE_DEFAULT = { height: null, birthYear: null, ctrlDay: 1, cycleAdj: true, cycleLen: 28 };
 const NEAT = 1.2;            // бытовая активность: базовый обмен × 1.2
 const LUTEAL_PCT = 0.08;     // во второй половине цикла расход в покое выше примерно на 5–10%
@@ -230,24 +230,21 @@ function weightOn(dISO) {
   const keys = Object.keys(S.days).filter((k) => k <= dISO && S.days[k].weight).sort();
   return keys.length ? num(S.days[keys[keys.length - 1]].weight) : 0;
 }
-// дата контрольного взвешивания в месяце этой даты
-function ctrlDateFor(dISO) {
-  const d = parseISO(dISO);
-  const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-  return `${dISO.slice(0, 7)}-${pad(Math.min(Math.max(1, Number(S.profile.ctrlDay) || 1), last))}`;
+// v3: вес — каждый день; считаем средние за неделю (ПН–ВС)
+function weekWeights(monISO) {
+  const mon = parseISO(monISO);
+  const vals = [...Array(7)].map((_, i) => { const d = getDay(iso(addDays(mon, i))); return d && d.weight ? num(d.weight) : 0; });
+  const got = vals.filter(Boolean);
+  return { vals, n: got.length, avg: got.length ? Math.round((got.reduce((a, b) => a + b, 0) / got.length) * 10) / 10 : 0 };
 }
-function ctrlDoneInMonth(dISO) {
-  const ym = dISO.slice(0, 7);
-  return Object.keys(S.days).some((k) => k.startsWith(ym) && S.days[k].weightCtrl && S.days[k].weight);
-}
-// показывать «контрольное взвешивание» в этот день?
-function isCtrlDay(dISO) {
-  const d = getDay(dISO);
-  if (d && d.weightCtrl) return true;
-  const c = ctrlDateFor(dISO);
-  if (dISO === c) return true;
-  // пропустили — напоминаем в следующие дни месяца, но не в будущем
-  return dISO > c && dISO <= todayISO() && !ctrlDoneInMonth(dISO);
+const deltaTxt = (a, b) => { const v = Math.round((a - b) * 10) / 10; return (v > 0 ? '+' : v < 0 ? '−' : '±') + fmtNum(Math.abs(v)); };
+// недели месяца (неделя относится к месяцу, в котором её четверг)
+function monthWeeks(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  const first = new Date(y, m - 1, 1), lastD = new Date(y, m, 0);
+  const out = [];
+  for (let mon = mondayOf(first); mon <= lastD; mon = addDays(mon, 7)) if (addDays(mon, 3).getMonth() === m - 1) out.push(mon);
+  return out;
 }
 // начала месячных: день с капелькой, перед которым капельки не было
 function periodStarts() {
@@ -442,6 +439,8 @@ function viewWeek(anchorISO) {
       <div class="week-mood">${moodCells}</div>
     </section>
 
+    ${weekWeightCard(monISO)}
+
     <section class="card tape notes-card" style="--tape:rgba(167,185,143,.55)">
       <h2 class="sec-title" style="--hl:rgba(167,185,143,.5)">Заметки недели ${heartSvg('inline')}</h2>
       <p class="hint">${starSvg('inline')} — главная заметка: попадёт в итоги месяца в календаре</p>
@@ -493,7 +492,8 @@ function viewDay(dISO) {
     const editing = !isPast && tpl && ui.editDays === f.id;
     // подписи «каждый день / ср, пт» не показываем — дни выбираются по нажатию на название
     return `
-      <li class="task fixed ${done ? 'done' : ''}">
+      <li class="task fixed ${done ? 'done' : ''}" data-sort-id="${f.id}">
+        ${!isPast && tpl ? '<span class="drag-handle" aria-label="Перетащить">≡</span>' : ''}
         ${isPast || !tpl ? `<span class="t-txt">${esc(f.title)}</span>`
           : `<button class="t-txt t-btn" data-act="editDays" data-id="${f.id}" aria-label="Выбрать дни недели">${esc(f.title)}</button>`}
         ${isPast ? `<span class="pin-btn on static">${pinSvg()}</span>`
@@ -530,7 +530,8 @@ function viewDay(dISO) {
           </div>
         </form>
       </li>` : `
-      <li class="food-row">
+      <li class="food-row" data-sort-id="${x.id}">
+        ${food.length > 1 ? '<span class="drag-handle" aria-label="Перетащить">≡</span>' : ''}
         <button class="fr-main" data-act="foodEdit" data-id="${x.id}" aria-label="Изменить запись"><span class="fr-name">${esc(x.name || 'Без названия')} <span class="fr-pen">✎</span></span>
           <span class="fr-nums">${num(x.kcal)} ккал · Б ${num(x.p)} · Ж ${num(x.f)} · У ${num(x.c)} · Кл ${num(x.fib)}</span></button>
         <button class="del" data-act="foodDel" data-d="${dISO}" data-id="${x.id}" aria-label="Удалить">×</button>
@@ -541,15 +542,24 @@ function viewDay(dISO) {
       <button class="drop-btn ${rec && rec.period >= k ? 'on' : ''}" data-act="period" data-d="${dISO}" data-v="${k}" aria-label="${k} из 3">${dropSvg()}</button>`).join('');
 
   const tasks = rec ? rec.tasks : [];
+  const tomorrowISO = iso(addDays(d, 1));
+  const shortDate = (s) => { const x = parseISO(s); return `${x.getDate()} ${MONTHS_GEN[x.getMonth()].slice(0, 3)}`; };
   const tasksHtml = tasks.map((t) => `
       <li class="task ${t.done ? 'done' : ''} ${t.moved ? 'moved' : ''}">
         <input class="t-in" value="${esc(t.title)}" data-input="taskTitle" data-d="${dISO}" data-id="${t.id}" enterkeyhint="done" aria-label="Дело">
-        ${t.moved ? '<span class="moved-tag">→ перенесено</span>'
+        ${t.moved ? `<a class="moved-tag" ${t.movedTo ? `href="#/day/${t.movedTo}"` : ''}>→ ${t.movedTo ? shortDate(t.movedTo) : 'перенесено'}</a>`
           : `<button class="pin-btn" data-act="pin" data-d="${dISO}" data-id="${t.id}" aria-label="Каждый день">${pinSvg()}</button>
              <button class="heart-btn ${t.fav ? 'on' : ''}" data-act="fav" data-d="${dISO}" data-id="${t.id}" aria-label="Показать в неделе">${heartSvg()}</button>
              <button class="box" data-act="toggleTask" data-d="${dISO}" data-id="${t.id}" aria-label="Выполнено"></button>`}
-        <button class="del" data-act="delTask" data-d="${dISO}" data-id="${t.id}" aria-label="Удалить">×</button>
-      </li>`).join('');
+        <button class="more-btn ${ui.taskMenu === t.id ? 'on' : ''}" data-act="taskMenu" data-id="${t.id}" aria-label="Ещё">⋯</button>
+      </li>
+      ${ui.taskMenu === t.id ? `
+      <li class="task-menu">
+        ${!t.moved && !t.done ? `
+          ${dISO === today ? `<button class="mv" data-act="moveTask" data-d="${dISO}" data-id="${t.id}" data-to="${tomorrowISO}">На завтра</button>` : ''}
+          <label class="mv date-mv">📅 На другой день<input type="date" data-input="moveTaskDate" data-d="${dISO}" data-id="${t.id}" min="${iso(addDays(d, 1))}"></label>` : ''}
+        <button class="mv danger" data-act="delTask" data-d="${dISO}" data-id="${t.id}">Удалить</button>
+      </li>` : ''}`).join('');
 
   const habitsHtml = S.habits.map((h) => {
     const on = !!(rec && rec.habits[h.id]);
@@ -602,7 +612,7 @@ function viewDay(dISO) {
     <section class="card tape paper-card" style="--tape:${color}99">
       <h2 class="sec-title" style="--hl:rgba(232,196,106,.55)">Дела на сегодня ${heartSvg('inline')}</h2>
       <p class="hint legend-line"><span>${pinSvg('inline')} повторять</span><span>${heartSvg('inline')} в неделю</span><span><i class="mini-box"></i> выполнено</span></p>
-      ${fixedHtml ? `<div class="sub-label">${pinSvg('inline')} Повторяющиеся</div><ul class="list tasks fixed-list" style="--c:${color}">${fixedHtml}</ul>` : ''}
+      ${fixedHtml ? `<div class="sub-label">${pinSvg('inline')} Повторяющиеся</div><ul class="list tasks fixed-list" data-sort="fixed" style="--c:${color}">${fixedHtml}</ul>` : ''}
       ${fixedHtml && tasksHtml ? '<div class="sub-label">На этот день</div>' : ''}
       <ul class="list tasks" style="--c:${color}">${tasksHtml}</ul>
       <form class="add" data-form="addTask" data-d="${dISO}">
@@ -623,7 +633,7 @@ function viewDay(dISO) {
         <span class="chev">▾</span>
       </summary>
       <div class="nbars">${bars}</div>
-      ${foodRows ? `<ul class="food-list">${foodRows}</ul>` : '<p class="hint" style="margin-top:8px">Добавляйте приёмы пищи — итог посчитается сам.</p>'}
+      ${foodRows ? `<ul class="food-list" data-sort="food" data-d="${dISO}">${foodRows}</ul>` : '<p class="hint" style="margin-top:8px">Добавляйте приёмы пищи — итог посчитается сам.</p>'}
       <form class="food-add" data-form="addFood" data-d="${dISO}">
         <input name="name" class="fa-name" placeholder="Что съели (завтрак, перекус…)" autocomplete="off">
         <div class="fa-nums">
@@ -636,23 +646,27 @@ function viewDay(dISO) {
 
     ${energyCard(dISO, rec)}
 
-    ${undone ? `<div style="margin-top:14px"><button class="btn soft block" data-act="carry" data-d="${dISO}">Перенести невыполненное (${undone}) на ${dISO === today ? 'завтра' : 'следующий день'} →</button></div>` : ''}
+    ${undone ? `
+      <div class="carry-box">
+        <div class="carry-title">Перенести невыполненное (${undone})</div>
+        <div class="carry-btns">
+          ${dISO === today ? `<button class="btn soft" data-act="carry" data-d="${dISO}" data-to="${tomorrowISO}">На завтра</button>` : ''}
+          <label class="btn soft date-mv ${dISO === today ? '' : 'wide'}">📅 На другой день<input type="date" data-input="carryDate" data-d="${dISO}" min="${iso(addDays(d, 1))}"></label>
+        </div>
+      </div>` : ''}
     ${garden(season, 'Маленькие шаги —<br>большие перемены')}
   `;
 }
 
 function energyCard(dISO, rec) {
   const e = energy(dISO);
-  const ctrl = isCtrlDay(dISO);
   const ownWeight = rec && rec.weight ? fmtNum(num(rec.weight)) : '';
-  const ctrlMissed = ctrl && dISO !== ctrlDateFor(dISO) && !(rec && rec.weightCtrl);
-  const weightBlock = ctrl ? `
+  const wk = weekWeights(iso(mondayOf(parseISO(dISO))));
+  const weightBlock = `
       <div class="ctrl-weigh">
-        <div class="cw-head">⚖️ <b>Контрольное взвешивание</b></div>
-        <p class="hint" style="margin:2px 0 8px">${ctrlMissed ? 'В этом месяце ещё не было — можно взвеситься сегодня.' : 'Раз в месяц, утром натощак — по этим точкам строится график веса в календаре.'}</p>
-        <label class="en-field"><span>Вес</span><input inputmode="decimal" value="${ownWeight}" data-input="weight" data-d="${dISO}" data-ctrl="1" placeholder="${e.weight ? fmtNum(e.weight) : '0'}"><em>кг</em></label>
-      </div>` : `
-      <label class="en-field"><span>Вес <small>(если взвешивались)</small></span><input inputmode="decimal" value="${ownWeight}" data-input="weight" data-d="${dISO}" placeholder="${e.weight ? fmtNum(e.weight) : '—'}"><em>кг</em></label>`;
+        <label class="en-field"><span>⚖️ Вес ${dISO === todayISO() ? 'сегодня' : 'в этот день'} <small>утром натощак</small></span><input inputmode="decimal" value="${ownWeight}" data-input="weight" data-d="${dISO}" placeholder="${e.weight ? fmtNum(e.weight) : '0'}"><em>кг</em></label>
+        ${wk.n ? `<p class="hint" style="margin:4px 0 0">Среднее за эту неделю: <b>${fmtNum(wk.avg)} кг</b> (взвешиваний: ${wk.n})</p>` : ''}
+      </div>`;
 
   let calc;
   if (e.missing) {
@@ -754,8 +768,7 @@ function viewCalendar(ym) {
         ${mood ? `<span class="cmood">${mood.e}</span>` : ''}
         ${n}${act && st.total ? `<span class="pct">${st.done}/${st.total}</span>` : ''}${hasNote ? '<span class="ndot"></span>' : ''}
         ${drops(rec && rec.period, 'cdrops')}
-        ${rec && rec.weightCtrl && rec.weight ? '<span class="cweigh" title="Контрольное взвешивание">⚖️</span>'
-          : dISO === ctrlDateFor(dISO) && dISO >= today ? '<span class="cweigh plan" title="День контрольного взвешивания">⚖️</span>' : ''}</a>`;
+        ${rec && rec.weight ? '<span class="cweigh" title="Взвешивание"></span>' : ''}</a>`;
     if (rec && rec.period) periodDays++;
     if (rec && rec.food && rec.food.length && dISO <= today) {
       const e = energy(dISO);
@@ -815,46 +828,69 @@ function viewCalendar(ym) {
     ${garden(season, 'Каждый день —<br>новая страница')}`;
 }
 
-/* ---------- график веса (по контрольным взвешиваниям) ---------- */
+function weekWeightCard(monISO) {
+  const cur = weekWeights(monISO);
+  const prev = weekWeights(iso(addDays(parseISO(monISO), -7)));
+  const cells = cur.vals.map((v, i) => `
+      <a class="ww-cell ${v ? 'has' : ''}" href="#/day/${iso(addDays(parseISO(monISO), i))}">
+        <span class="ww-v">${v ? fmtNum(v) : '·'}</span><span class="wm-d">${WD_SHORT[i]}</span></a>`).join('');
+  return `
+    <section class="card tape" style="--tape:rgba(233,163,168,.55)">
+      <h2 class="sec-title" style="--hl:rgba(233,163,168,.45)">Вес недели ⚖️</h2>
+      <div class="ww-row">${cells}</div>
+      ${cur.n ? `
+        <div class="ww-avg">
+          <span>Среднее за неделю</span><b>${fmtNum(cur.avg)} кг</b>
+        </div>
+        <p class="hint center" style="margin:6px 0 0">взвешиваний: ${cur.n}${prev.n ? ` · к прошлой неделе: <b>${deltaTxt(cur.avg, prev.avg)} кг</b>` : ''}</p>`
+        : '<p class="hint" style="margin:8px 0 0">Вписывайте вес на странице дня — здесь посчитается среднее за неделю.</p>'}
+    </section>`;
+}
+
+/* ---------- график веса: средние по неделям месяца ---------- */
+function monthAvg(ym) {
+  const ws = monthWeeks(ym).map((m) => weekWeights(iso(m))).filter((w) => w.n);
+  if (!ws.length) return { avg: 0, n: 0 };
+  const all = ws.flatMap((w) => w.vals.filter(Boolean));
+  return { avg: Math.round((all.reduce((a, b) => a + b, 0) / all.length) * 10) / 10, n: all.length };
+}
 function weightChart(ym) {
-  const endISO = `${ym}-31`;
-  const pts = Object.keys(S.days).filter((k) => k <= endISO && S.days[k].weightCtrl && S.days[k].weight).sort()
-    .map((k) => ({ k, w: num(S.days[k].weight), d: parseISO(k) })).slice(-12);
-  const head = `<h2 class="sec-title" style="--hl:rgba(233,163,168,.45)">Вес ⚖️</h2>`;
+  const weeks = monthWeeks(ym);
+  const all = weeks.map((mon, idx) => ({ idx, mon, k: iso(mon), ...weekWeights(iso(mon)) }));
+  const pts = all.filter((p) => p.n).map((p) => ({ ...p, w: p.avg }));
+  const head = `<h2 class="sec-title" style="--hl:rgba(233,163,168,.45)">Вес по неделям ⚖️</h2>`;
   if (!pts.length) {
     return `<section class="card tape" style="--tape:rgba(233,163,168,.55)">${head}
-      <p class="hint" style="margin:4px 0 0">Здесь будет график по контрольным взвешиваниям — раз в месяц, ${S.profile.ctrlDay || 1}-го числа. В этот день на странице дня появится поле ⚖️.</p></section>`;
+      <p class="hint" style="margin:4px 0 0">Вписывайте вес на странице дня (лучше каждое утро) — здесь появится среднее за каждую неделю месяца.</p></section>`;
   }
-  const W = 340, H = 170, L = 36, R = 44, T = 18, B = 26;
+  const W = 340, H = 170, L = 36, R = 44, T = 22, B = 30;
   const ws = pts.map((p) => p.w);
   let lo = Math.min(...ws), hi = Math.max(...ws);
   if (hi - lo < 2) { const mid = (hi + lo) / 2; lo = mid - 1; hi = mid + 1; }
   lo = Math.floor(lo - 0.3); hi = Math.ceil(hi + 0.3);
-  const t0 = pts[0].d.getTime(), t1 = pts[pts.length - 1].d.getTime();
-  const xOf = (p) => pts.length === 1 ? L + (W - L - R) / 2 : L + ((p.d.getTime() - t0) / (t1 - t0)) * (W - L - R);
+  const span = Math.max(1, weeks.length - 1);
+  const xOf = (p) => L + (p.idx / span) * (W - L - R);
   const yOf = (w) => T + (1 - (w - lo) / (hi - lo)) * (H - T - B);
   const ticks = [lo, (lo + hi) / 2, hi];
   const grid = ticks.map((v) => `<line x1="${L}" x2="${W - R + 30}" y1="${yOf(v)}" y2="${yOf(v)}" class="wc-grid"/><text x="${L - 6}" y="${yOf(v) + 4}" class="wc-axis" text-anchor="end">${fmtNum(v)}</text>`).join('');
   const path = pts.map((p, i) => `${i ? 'L' : 'M'}${xOf(p).toFixed(1)},${yOf(p.w).toFixed(1)}`).join(' ');
-  const MON_SHORT = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
-  const step = Math.ceil(pts.length / 6);
-  const xl = pts.map((p, i) => (i % step === 0 || i === pts.length - 1)
-    ? `<text x="${xOf(p)}" y="${H - 6}" class="wc-axis" text-anchor="middle">${MON_SHORT[p.d.getMonth()]}</text>` : '').join('');
+  const rng = (mon) => { const s = addDays(mon, 6); return `${mon.getDate()}–${s.getDate()}`; };
+  const xl = all.map((p) => `<text x="${xOf(p)}" y="${H - 8}" class="wc-axis" text-anchor="middle">${rng(p.mon)}</text>`).join('');
   const last = pts[pts.length - 1];
   const sel = pts.find((p) => p.k === ui.wPoint);
   const marks = pts.map((p) => `
       <circle cx="${xOf(p)}" cy="${yOf(p.w)}" r="5" class="wc-dot ${sel === p ? 'on' : ''}"/>
-      <circle cx="${xOf(p)}" cy="${yOf(p.w)}" r="16" class="wc-hit" data-act="wPoint" data-k="${p.k}"><title>${p.d.getDate()} ${MONTHS_GEN[p.d.getMonth()]}: ${fmtNum(p.w)} кг</title></circle>`).join('');
+      <circle cx="${xOf(p)}" cy="${yOf(p.w)}" r="16" class="wc-hit" data-act="wPoint" data-k="${p.k}"><title>${rng(p.mon)}: ${fmtNum(p.w)} кг</title></circle>`).join('');
   const tip = sel ? (() => {
-    const x = Math.min(Math.max(xOf(sel), L + 40), W - 40), y = yOf(sel.w) - 14;
-    return `<g class="wc-tip"><rect x="${x - 44}" y="${y - 22}" width="88" height="22" rx="7"/><text x="${x}" y="${y - 7}" text-anchor="middle">${sel.d.getDate()} ${MONTHS_GEN[sel.d.getMonth()].slice(0, 3)} · ${fmtNum(sel.w)} кг</text></g>`;
+    const x = Math.min(Math.max(xOf(sel), L + 50), W - 50), y = yOf(sel.w) - 14;
+    return `<g class="wc-tip"><rect x="${x - 56}" y="${y - 22}" width="112" height="22" rx="7"/><text x="${x}" y="${y - 7}" text-anchor="middle">${rng(sel.mon)} · ${fmtNum(sel.w)} кг (${sel.n}×)</text></g>`;
   })() : '';
-  const prev = pts.length > 1 ? pts[pts.length - 2] : null;
-  const delta = (a, b) => { const v = Math.round((a - b) * 10) / 10; return (v > 0 ? '+' : v < 0 ? '−' : '±') + fmtNum(Math.abs(v)); };
+  const [y, m] = ym.split('-').map(Number);
+  const cur = monthAvg(ym), prevM = monthAvg(iso(new Date(y, m - 2, 1)).slice(0, 7));
   return `
     <section class="card tape" style="--tape:rgba(233,163,168,.55)">
       ${head}
-      <svg class="weight-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="График веса по контрольным взвешиваниям">
+      <svg class="weight-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Средний вес по неделям месяца">
         ${grid}
         ${pts.length > 1 ? `<path d="${path}" class="wc-line"/>` : ''}
         ${marks}
@@ -863,11 +899,12 @@ function weightChart(ym) {
         ${tip}
       </svg>
       <div class="wc-sum">
-        ${prev ? `<span>С прошлого раза: <b>${delta(last.w, prev.w)} кг</b></span>` : '<span>График появится со второго контрольного взвешивания</span>'}
-        ${pts.length > 2 ? `<span>С начала: <b>${delta(last.w, pts[0].w)} кг</b></span>` : ''}
+        <span>Среднее за месяц: <b>${fmtNum(cur.avg)} кг</b></span>
+        ${prevM.n ? `<span>К прошлому месяцу: <b>${deltaTxt(cur.avg, prevM.avg)} кг</b></span>` : ''}
+        ${pts.length > 1 ? `<span>За месяц по неделям: <b>${deltaTxt(last.w, pts[0].w)} кг</b></span>` : ''}
       </div>
       <details class="wc-table"><summary>Таблица</summary>
-        <table>${pts.slice().reverse().map((p) => `<tr><td>${p.d.getDate()} ${MONTHS_GEN[p.d.getMonth()]} ${p.d.getFullYear()}</td><td>${fmtNum(p.w)} кг</td></tr>`).join('')}</table>
+        <table>${all.map((p) => `<tr><td>${rng(p.mon)} ${MONTHS_GEN[addDays(p.mon, 6).getMonth()]}</td><td>${p.n ? `${fmtNum(p.avg)} кг <small class="muted">(${p.n}×)</small>` : '—'}</td></tr>`).join('')}</table>
       </details>
     </section>`;
 }
@@ -876,8 +913,8 @@ function weightChart(ym) {
 function viewSettings() {
   const season = seasonOf(new Date());
   const fRows = S.fixed.map((f) => `
-      <div class="edit-row" style="flex-wrap:wrap">
-        ${pinSvg('inline row-pin')}
+      <div class="edit-row" style="flex-wrap:wrap" data-sort-id="${f.id}">
+        ${S.fixed.length > 1 ? '<span class="drag-handle" aria-label="Перетащить">≡</span>' : pinSvg('inline row-pin')}
         <input class="txt" value="${esc(f.title)}" data-input="fTitle" data-id="${f.id}" placeholder="Повторяющееся дело">
         <button class="heart-btn ${f.fav ? 'on' : ''}" data-act="fixFav" data-id="${f.id}" aria-label="В неделю">${heartSvg()}</button>
         <button class="del" data-act="fDel" data-id="${f.id}" aria-label="Удалить">×</button>
@@ -907,7 +944,7 @@ function viewSettings() {
     <section class="card tape" style="--tape:rgba(232,196,106,.55)">
       <h2 class="sec-title">Повторяющиеся дела</h2>
       <p class="hint">Сами появляются в выбранные дни недели (например, французский по СР и ПТ). Закрепить можно и прямо в плане дня — значком ${pinSvg('inline')}. Прошлые дни в архиве не изменятся.</p>
-      ${fRows || '<div class="empty">Пока пусто</div>'}
+      ${fRows ? `<div data-sort="fixed">${fRows}</div>` : '<div class="empty">Пока пусто</div>'}
       <div class="settings-actions"><button class="btn soft" data-act="fAdd">+ Добавить дело</button></div>
     </section>
 
@@ -923,7 +960,6 @@ function viewSettings() {
       <div class="norms">
         <label class="norm-row"><span>Рост</span><input inputmode="decimal" value="${S.profile.height || ''}" data-input="prof" data-k="height" placeholder="165"><em>см</em></label>
         <label class="norm-row"><span>Год рождения</span><input inputmode="numeric" value="${S.profile.birthYear || ''}" data-input="prof" data-k="birthYear" placeholder="1995"><em></em></label>
-        <label class="norm-row"><span>Контрольное взвешивание<br><small class="muted">какого числа каждый месяц</small></span><input inputmode="numeric" value="${S.profile.ctrlDay || 1}" data-input="prof" data-k="ctrlDay" placeholder="1"><em>число</em></label>
         <div class="norm-row switch-row">
           <span>Поправка на фазу цикла<br><small class="muted">+~8% к обмену во второй половине цикла, по отмеченным капелькам</small></span>
           <button class="switch ${S.profile.cycleAdj ? 'on' : ''}" data-act="cycleAdj" aria-label="Поправка на цикл"><i></i></button>
@@ -987,7 +1023,7 @@ const actions = {
       if (t.done) d.fixedDone[nf.id] = true;
     }
     syncTodayFixed(); ui.editDays = nf.id; save(); render();
-    toast('Закреплено 📌 Дни недели — нажмите на название');
+    toast('Закреплено 📌 Дни и порядок — нажмите на название');
   },
   editDays(el) { ui.editDays = ui.editDays === el.dataset.id ? null : el.dataset.id; render(); },
   fixDay(el) {
@@ -1022,6 +1058,15 @@ const actions = {
   foodEdit(el) { ui.editFood = el.dataset.id; pendingFocus = '.food-edit .fa-name'; render(); },
   foodEditCancel() { ui.editFood = null; render(); },
   cycleAdj() { S.profile.cycleAdj = !S.profile.cycleAdj; save(); render(); },
+  foodMove(el) {
+    const d = getDay(el.dataset.d); if (!d) return;
+    if (moveIn(d.food, el.dataset.id, Number(el.dataset.dir))) { save(); render(); }
+  },
+  fixMove(el) {
+    if (!moveIn(S.fixed, el.dataset.id, Number(el.dataset.dir))) return;
+    // сегодняшний день сразу получает новый порядок (отметки сохраняются)
+    syncTodayFixed(); save(); render();
+  },
   wPoint(el) { ui.wPoint = ui.wPoint === el.dataset.k ? null : el.dataset.k; render(); },
   unpin(el) {
     const dISO = el.dataset.d; const id = el.dataset.id;
@@ -1046,18 +1091,9 @@ const actions = {
     d.tasks = d.tasks.filter((x) => x.id !== el.dataset.id); save(); render();
   },
   toggleHabit(el) { const d = ensureDay(el.dataset.d); d.habits[el.dataset.id] = !d.habits[el.dataset.id]; save(); render(); },
-  carry(el) {
-    const dISO = el.dataset.d;
-    const d = getDay(dISO); if (!d) return;
-    const nd = ensureDay(iso(addDays(parseISO(dISO), 1)));
-    let n = 0;
-    d.tasks.forEach((t) => {
-      if (t.done || t.moved) return;
-      nd.tasks.push({ id: uid(), title: t.title, done: false, fav: !!t.fav });
-      t.moved = true; n++;
-    });
-    save(); render(); toast(`Перенесено дел: ${n}`);
-  },
+  carry(el) { carryTasks(el.dataset.d, el.dataset.to); },
+  taskMenu(el) { ui.taskMenu = ui.taskMenu === el.dataset.id ? null : el.dataset.id; render(); },
+  moveTask(el) { carryTasks(el.dataset.d, el.dataset.to, el.dataset.id); },
   fAdd() { S.fixed.push({ id: uid(), title: '', fav: false }); syncTodayFixed(); save(); pendingFocus = '.edit-row input.txt[value=""]'; render(); },
   fDel(el) {
     const f = S.fixed.find((x) => x.id === el.dataset.id);
@@ -1078,6 +1114,100 @@ document.addEventListener('click', (e) => {
   const g = e.target.closest('[data-go]');
   if (g && !e.target.closest('input,textarea')) go(g.dataset.go);
 });
+
+// перенос невыполненных дел (всех или одного) на выбранную дату
+function carryTasks(fromISO, toISO, onlyId) {
+  if (!isValidISO(toISO) || toISO === fromISO) return;
+  const d = getDay(fromISO); if (!d) return;
+  const nd = ensureDay(toISO);
+  let n = 0;
+  d.tasks.forEach((t) => {
+    if (t.done || t.moved || (onlyId && t.id !== onlyId)) return;
+    nd.tasks.push({ id: uid(), title: t.title, done: false, fav: !!t.fav, from: fromISO });
+    t.moved = true; t.movedTo = toISO; n++;
+  });
+  ui.taskMenu = null;
+  const x = parseISO(toISO);
+  save(); render();
+  toast(onlyId ? `Перенесено на ${x.getDate()} ${MONTHS_GEN[x.getMonth()]}` : `Перенесено дел: ${n} → ${x.getDate()} ${MONTHS_GEN[x.getMonth()]}`);
+}
+
+/* ---------- перетаскивание за ≡ (пальцем или мышью) ---------- */
+let drag = null;
+document.addEventListener('pointerdown', (e) => {
+  const h = e.target.closest('.drag-handle'); if (!h) return;
+  const item = h.closest('[data-sort-id]'); const list = item && item.closest('[data-sort]'); if (!list) return;
+  e.preventDefault();
+  try { h.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+  list.classList.add('sorting'); // прячет раскрытый выбор дней до замера
+  const items = [...list.querySelectorAll('[data-sort-id]')].filter((x) => x.closest('[data-sort]') === list);
+  const rects = items.map((x) => x.getBoundingClientRect());
+  const from = items.indexOf(item);
+  const step = from < items.length - 1 ? rects[from + 1].top - rects[from].top : from > 0 ? rects[from].top - rects[from - 1].top : rects[from].height;
+  drag = { h, item, list, items, rects, from, to: from, startY: e.clientY, step, id: e.pointerId };
+  list.classList.add('sorting'); item.classList.add('dragging');
+  if (navigator.vibrate) navigator.vibrate(10);
+});
+document.addEventListener('pointermove', (e) => {
+  if (!drag || e.pointerId !== drag.id) return;
+  e.preventDefault();
+  const { items, rects, from, item, step } = drag;
+  const dy = e.clientY - drag.startY;
+  item.style.transform = `translateY(${dy}px)`;
+  const center = rects[from].top + rects[from].height / 2 + dy;
+  let to = from;
+  rects.forEach((r, i) => {
+    const mid = r.top + r.height / 2;
+    if (i > from && center > mid) to = i;
+    if (i < from && center < mid && i < to) to = i;
+  });
+  drag.to = to;
+  items.forEach((x, i) => {
+    if (x === item) return;
+    let shift = 0;
+    if (from < to && i > from && i <= to) shift = -step;
+    if (to < from && i >= to && i < from) shift = step;
+    x.style.transform = shift ? `translateY(${shift}px)` : '';
+  });
+}, { passive: false });
+function endDrag() {
+  if (!drag) return;
+  const { items, from, to, list } = drag;
+  items.forEach((x) => { x.style.transform = ''; x.classList.remove('dragging'); });
+  list.classList.remove('sorting');
+  drag = null;
+  if (from === to) return;
+  const ids = items.map((x) => x.dataset.sortId);
+  const [moved] = ids.splice(from, 1); ids.splice(to, 0, moved);
+  if (list.dataset.sort === 'food') {
+    const d = getDay(list.dataset.d); if (!d) return;
+    d.food = ids.map((id) => d.food.find((x) => x.id === id)).filter(Boolean);
+  } else if (list.dataset.sort === 'fixed') {
+    // в дне видна только часть повторяющихся дел — переставляем их на «их» местах в общем списке
+    const slots = S.fixed.map((f, i) => (ids.includes(f.id) ? i : -1)).filter((i) => i >= 0);
+    const reordered = ids.map((id) => S.fixed.find((f) => f.id === id));
+    slots.forEach((slot, k) => { S.fixed[slot] = reordered[k]; });
+    syncTodayFixed();
+  }
+  save(); render();
+}
+document.addEventListener('pointerup', endDrag);
+document.addEventListener('pointercancel', endDrag);
+
+// кнопки «выше / ниже» для элемента списка
+function moveBtns(act, id, list) {
+  if (list.length < 2) return '';
+  const i = list.findIndex((x) => x.id === id);
+  return `<div class="mv-row">
+      <button class="mv" data-act="${act}" data-id="${id}" data-dir="-1" ${i <= 0 ? 'disabled' : ''}>▲ выше</button>
+      <button class="mv" data-act="${act}" data-id="${id}" data-dir="1" ${i >= list.length - 1 ? 'disabled' : ''}>▼ ниже</button>
+    </div>`;
+}
+const moveIn = (list, id, dir) => {
+  const i = list.findIndex((x) => x.id === id), j = i + dir;
+  if (i < 0 || j < 0 || j >= list.length) return false;
+  [list[i], list[j]] = [list[j], list[i]]; return true;
+};
 
 function dayPicker(f) {
   const on = fixedDays(f);
@@ -1150,14 +1280,16 @@ document.addEventListener('change', (e) => {
     t.title = v; save();
   } else if (kind === 'norm') {
     S.norms[el.dataset.k] = num(el.value); save();
+  } else if (kind === 'moveTaskDate' || kind === 'carryDate') {
+    if (el.value) carryTasks(el.dataset.d, el.value, kind === 'moveTaskDate' ? el.dataset.id : null);
   } else if (kind === 'weight' || kind === 'active') {
     const d = ensureDay(el.dataset.d);
     const v = num(el.value);
     if (kind === 'weight') {
       if (v > 0 && (v < 25 || v > 300)) { toast('Проверьте вес — похоже на опечатку'); return; }
       d.weight = v || null;
-      d.weightCtrl = !!(v && el.dataset.ctrl);
-      if (v && el.dataset.ctrl) toast('Контрольный вес записан ⚖️');
+      delete d.weightCtrl;
+      if (v) toast('Вес записан ⚖️');
     } else d.active = v || null;
     save(); render();
   } else if (kind === 'prof') {
@@ -1217,7 +1349,7 @@ async function exportCSV() {
     const wd = WD_FULL[wdIndex(parseISO(dISO))];
     const mood = moodOf(d.mood);
     if (mood) rows.push([dISO, wd, 'Настроение', mood.t, '', '']);
-    if (d.weight) rows.push([dISO, wd, d.weightCtrl ? 'Вес (контрольный)' : 'Вес', `${fmtNum(num(d.weight))} кг`, '', '']);
+    if (d.weight) rows.push([dISO, wd, 'Вес', `${fmtNum(num(d.weight))} кг`, '', '']);
     if (d.active) rows.push([dISO, wd, 'Активные калории', `${num(d.active)} ккал`, '', '']);
     if (d.period) rows.push([dISO, wd, 'Месячные', ['', 'слабые', 'средние', 'сильные'][d.period], '', '']);
     (d.food || []).forEach((x) => rows.push([dISO, wd, 'Питание',

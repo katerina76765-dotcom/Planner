@@ -1,6 +1,6 @@
 // Офлайн-режим: код приложения кэшируется на телефоне.
 // Ваши записи хранятся отдельно (в памяти браузера) и сюда не попадают.
-const VERSION = 'planner-release-v2';
+const VERSION = 'planner-release-v3';
 const SHELL = [
   './',
   './index.html',
